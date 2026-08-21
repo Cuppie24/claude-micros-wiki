@@ -1,0 +1,7 @@
+micros
+
+# .claude: track only instruction/knowledge docs (.md), ignore everything else
+# (personal settings, session state, caches, etc.)
+.claude/*
+!.claude/**/
+!.claude/**/*.md
