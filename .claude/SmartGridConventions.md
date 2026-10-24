@@ -467,3 +467,102 @@ Plain `WithFocus` alone is only correct when the unfocused-selection highlight i
 ## Gotcha: designer serializes `SelectedRows` state junk
 
 The VS designer serializes `SmartGrid.SelectedRows` into the Designer.cs (`this._grid.SelectedRows = ((List<int>)(resources.GetObject("_grid.SelectedRows")));`) with a binary blob in the `.resx` — this is captured *designer-session selection state*, not configuration. It pre-bakes a selection into every new instance. When found (typically after copying a grid between forms), delete both the Designer.cs line and the `<data name="_grid.SelectedRows" ...>` element in the `.resx`.
+
+## Gotcha: assigning `DataSource` raises `AfterSelChange` mid-rebind — `GetSelectedRows()` in the handler throws
+
+Setting `grid.DataSource = new C1DataCollectionBindingList(...)` makes C1 select a row itself (`C1FlexGridBase.Select` from the binding code),
+which raises `AfterSelChange` **while the rebind is still in progress**. A handler that calls `grid.GetSelectedRows()` (e.g. to enable / disable
+toolbar commands from the selection) then fails:
+
+```
+System.ArgumentOutOfRangeException  Source=mscorlib  (Имя параметра: index)
+   at C1.Win.C1FlexGrid.RowCollection.get_Item(Int32 index)
+   at MicrosSmartGrid.SmartGrid.GetSelectedRows()
+   at ...Form.<your AfterSelChange handler>
+   at C1.Win.C1FlexGrid.C1FlexGridBase.Select(Int32 row, Int32 col)
+```
+
+The same applies to the in-place `RemoveAt` + `Insert` update (between the two calls the list is one row short).
+
+**Fix:** unsubscribe the handler around the rebind / in-place update and run the refresh once afterwards (the "no suppression flags" rule —
+unsubscribe/resubscribe, not a bool):
+
+```csharp
+grid.AfterSelChange -= grid_AfterSelChange;
+grid.SelectedRows?.Clear();
+grid.BeginUpdate();
+grid.DataSource = new C1DataCollectionBindingList(items);
+grid.EndUpdate();
+grid.AfterSelChange += grid_AfterSelChange;
+RefreshCommands();
+```
+
+Also: with no marked rows `GetSelectedRows()` falls back to the current row, which on an empty grid is `-1` / a fixed row → the same exception.
+Guard `Rows.Count <= Rows.Fixed || Row < Rows.Fixed` before calling it.
+
+Found 2026-10-24 in CWATIS (`Features/Warehouse/StockGoods/View/WhStockGoodsForm`: `BindCards` / `UpdateCards` / `GetSelectedCards`).
+
+## Standard: clear the designer's placeholder rows when the form is created
+
+Every grid comes out of the Designer with placeholder rows (`Rows.Count = 5`, `10`, `51`, ...). Until the first real load they show as an empty
+striped table, and code that reads "the current row" sees rows that aren't data. **Standard pattern: right after `InitializeComponent()`, set each grid
+(SmartGrid and TreeFlexGrid alike — both are `C1FlexGrid`) to zero data rows, keeping the fixed and footer rows:**
+
+```csharp
+public SomeForm()
+{
+    InitializeComponent();
+
+    // пустые строки из дизайнера не должны мелькать до загрузки данных
+    ClearGrid(gridMaster);
+    ClearGrid(gridDetail);
+    ...
+}
+
+/// <summary>Ноль строк данных: остаются только фиксированные строки и строки футера.</summary>
+private static void ClearGrid(C1FlexGrid grid)
+{
+    grid.Rows.Count = grid.Rows.Fixed + grid.Footers.Descriptions.Count;
+}
+```
+
+Count the footer rows in (`+ Footers.Descriptions.Count`). A plain `Rows.Count = Rows.Fixed` (older forms, e.g. `TgMembersForm`, `MTPProfilesForm`)
+is only correct for a grid with no footer. Don't fix it by changing `Rows.Count` in the Designer: the designer rewrites it on the next save.
+
+Precedents: `WhInventoryReportsForm`, `WhMovementControl`, `WhGoodsDetailsForm`, `WhStockGoodsForm` (`Features/Warehouse`).
+
+## Standard: a read-only checkbox column shows a checkbox only when the value is true
+
+In a `DataType:System.Boolean` column the user can't toggle (the column's or the grid's `AllowEditing` is `false`), an empty checkbox on every
+`false` row is visual noise: a column full of empty squares in which the few `true` rows are hard to spot. **Rule: if the checkbox column isn't
+editable, draw nothing for `false`, only the ticked checkbox for `true`.** Editable checkbox columns keep the normal empty box: there it is the
+click target.
+
+In `OwnerDrawCell` (grid `DrawMode = OwnerDraw`), draw only the background and border for an unchecked cell, so the check glyph is never painted:
+
+```csharp
+/// <summary>Нередактируемый чекбокс показываем только у true: у false — только фон и рамка, без глифа.</summary>
+private void grid_OwnerDrawCell(object sender, OwnerDrawCellEventArgs e)
+{
+    if (e.Row < grid.Rows.Fixed || e.Row >= grid.Rows.Count) return;
+    if (e.Col < 0 || e.Col >= grid.Cols.Count) return;
+
+    var col = grid.Cols[e.Col];
+    if (col.DataType != typeof(bool) || (grid.AllowEditing && col.AllowEditing)) return;
+
+    if (grid.GetCellCheck(e.Row, e.Col) == CheckEnum.Unchecked)
+    {
+        e.DrawCell(DrawCellFlags.Background | DrawCellFlags.Border);
+        e.Handled = true;
+    }
+}
+```
+
+- Read the state with `GetCellCheck`, i.e. what the grid is about to paint. Reading the value through `grid[row, col]` is unreliable for rows of a
+  `C1DataCollectionBindingList` (see the inventory form's `gridLines_OwnerDrawCell` note).
+- Keep `Background | Border` (not `e.Handled = true` alone): the row's selection / highlight colour and the cell border must still be drawn.
+- Check bounds first: `OwnerDrawCell` also fires for fixed and footer rows.
+
+Precedent: `WhStockGoodsForm.gridCards_OwnerDrawCell` (column `stockgoods_is_closed`, 2026-10-24). Status: builds; the painting itself has not yet
+been confirmed in the running app. If the glyph still shows, check that the column really has `DataType:System.Boolean` (otherwise `GetCellCheck`
+returns `None`).

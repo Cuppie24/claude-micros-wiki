@@ -62,6 +62,38 @@ Leaving `AutoGenerateColumns = true` on a `TreeFlexGrid` produces a tree that *l
 
 Same pattern as `SmartGrid` — see "Handling Double-Click on a Specific Column" in `SmartGridConventions.md`. `TreeFlexGrid` supports `HitTest`/`MouseDoubleClick` identically.
 
+## `BuildTreeNew` adds a synthetic root node
+
+`BuildTreeNew` puts one extra node at the top, captioned `...`, with `Id = 0`. All the real root items (`ParentId` matching no `Id`) hang under it. Its other
+bound columns show the model defaults (e.g. `0` in a count column). Seen 2026-10-24 in `WhStockGoodsForm`. Account for it:
+
+- Blank its data columns in `OwnerDrawCell` (check `grid[row, "Id"] == 0` on a node row).
+- Skip it when picking a default selection or reading the "current group" (`Id == 0` → nothing selected).
+- To open the tree fully, set `row.Node.Expanded = true` on every node row. `CollapseByLevel(Tree.MaximumLevel)` did not leave the tree fully expanded there.
+
+## Gotcha: `IdName` set in the Designer + serialized `SelectedID = 0` → `NullReferenceException` in `InitializeComponent`
+
+The VS designer serializes `this.grid.SelectedID = 0;` for every `TreeFlexGrid`. The `SelectedID` setter calls `SetSelectedRow(id)`. That is
+harmless while `IdName` is `null` (what every precedent designer has), but once `IdName` is set **earlier in `InitializeComponent`** it tries to
+locate the row in the still-empty tree and throws:
+
+```
+System.NullReferenceException  Source=Tools.V2
+   at Manufacture.Compotents.TreeFlexGrid.SetSelectedRow(Int32 id)
+   at Manufacture.Compotents.TreeFlexGrid.set_SelectedID(Int32 value)
+   at ...Form.InitializeComponent()
+```
+
+Deleting the `SelectedID` line alone is not enough: the designer writes it back on the next save. Keep `IdName = null` in the Designer and set it
+in the constructor after `InitializeComponent()`. `IdName` is needed for `ExpandToNodeById` (it reads `row[grid.IdName]`):
+
+```csharp
+InitializeComponent();
+gridGroups.IdName = "Id";
+```
+
+Found 2026-10-24 in CWATIS (`Features/Warehouse/StockGoods/View/WhStockGoodsForm`), on the first runtime open of the form.
+
 ## Precedent forms
 
 `GoodsTree4PriceListForm.cs`, `GoodsTree4PriceCardsForm.cs`, `SetAddForm.cs`, `ProductsNotSoldRepForm.cs`, `ProductMoveRepForm.cs`, `ProductSalesRepForm.cs`, `JSONVIewForm.cs` (`Forms\JSONForm\View\`, the JSON tree/raw-text viewer opened from `ContractTypesForm`'s `HasJson` column).
