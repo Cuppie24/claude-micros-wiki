@@ -43,9 +43,27 @@ IN _Search varchar(200) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci
 
 Comparing it with `utf8mb3_general_ci` columns (e.g. `rfr_goods_tree.MCode`) still works: MySQL converts the utf8mb3 side up to its utf8mb4 superset.
 
+## Second mechanism: an undeclared parameter's charset also depends on the creating session (no literal needed)
+
+Found the same day, recreating `cwatis.WhDocument_Get` through `mysql.exe` with **no default schema selected**:
+
+```
+ERROR 1267 (HY000): Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT) for operation '='
+```
+
+from a plain `dt.wh_doc_type_code = _DocTypeCode`. There's no literal in that expression, and it fails even when `NULL` is passed, because
+collations are checked when the statement is prepared. A parameter declared without `CHARSET` gets the **session's `character_set_database`
+at creation time**, not the default of the schema the routine lives in. With no default schema selected, that's the server default
+(`utf8mb4` → `utf8mb4_0900_ai_ci`). The original body (created from a session with the schema selected) had the parameter in `utf8mb3`,
+which converts silently to the column's utf8mb4. So recreating an existing, working procedure from a different client can break it at runtime
+without a single character of the SQL changing.
+
 ## Checklist
 
-- A string parameter that ends up in `LIKE` / `=` / `CONCAT` with literals: declare `CHARSET ... COLLATE ...` matching the target column.
+- **Every** string parameter compared with a column (`=`, `LIKE`, `IN`), not only ones used with literals: declare `CHARSET ... COLLATE ...`
+  matching the target column. Then the procedure no longer depends on who creates it, or how.
+- Recreating someone else's procedure via the CLI: either select its schema first (`mysql ... cwatis`) or add explicit parameter collations;
+  re-test a call afterwards, including with `NULL` arguments.
 - Runtime "Illegal mix of collations" naming a collation no table uses: check `SHOW CREATE PROCEDURE` → `collation_connection`, i.e. the creating
   session, and look for literals in the failing expression.
 - Test a new procedure's text-filter branch right after creating it. The non-filter branch does not touch the literal and passes.
