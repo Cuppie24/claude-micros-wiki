@@ -29,7 +29,13 @@ current row («Информация о записи»). This file covers both ha
 - What gets logged: the logger reads the row itself (dynamic `SELECT` over the table's columns) and writes a snapshot of all
   non-empty columns. Columns whose comment starts with `!!! ` are skipped. `cwatis.add_rec_info` and `global_db.add_rec_info`
   don't fill `EditValues`, so an entry is a full snapshot, not a diff of what changed (switching to diffs is a deferred task —
-  draft `CWATIS/Features/Warehouse/Sql/rec-info-editvalues.sql`, not applied).
+  draft `CWATIS/Features/Warehouse/Sql/rec-info-editvalues.sql`, not applied, reviewed by nobody; deferred by the user
+  2026-11-10). The draft adds an index `(TABLE_NAME, ID_REC)` on `log_db.rec_info_cwatis`, resets `@comment`/`@comment1`
+  in `global_db.get_rec_info_editvalues_Javlon` (stale session values leak in otherwise), and makes both `add_rec_info`
+  write `EditValues` and skip empty EDITs. Facts (mars, 2026-11-10): `EditValues` was filled 2025-04-23..2025-07-10 and
+  is NULL since 2025-12-15, reason unknown; `_Javlon` is also called by `subdivfinances.add_rec_info`. It changes logging
+  for all of CWATIS + `global_db` (33 cwatis procedures, UniSaver), so it needs the logger owner's agreement; before
+  picking it up, re-dump the three procedure bodies and rebase the draft.
 - Reading: `Refers.RecInfoForm` calls `refers.r_rec_info(_DBName, _ID_REC, _TABLE_NAME, …)`, which reads `log_db.rec_info_<_DBName>`.
 
 ## Writing the log in a procedure

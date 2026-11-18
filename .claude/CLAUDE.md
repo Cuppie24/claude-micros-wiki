@@ -32,6 +32,21 @@ write it down before finishing the task:
 4. Topic pages: the rule, wrong way vs right way (short code), why, precedents.
 5. Commit the change in this repo (and in the project repo for project docs).
 
+## Working with this user
+
+- C#/.NET (WinForms) developer. When explaining another language (e.g. Python in the LangChain prototypes), contrast it
+  with the C# equivalent; skip programming basics.
+- Status write-ups (migration/refactor logs, progress notes): keep **Finished** and **Not finished / in progress** in
+  separate lists — never one blended sentence.
+
+## Ongoing cross-repo work
+
+- **SubDivId migration** (bookkeep local `subdivisions` ids → `global_db.rfr_subdivisions.SDId`, table by table):
+  tracked in `micros/bookkeep/Задача - Перенос SubDivId на global_db.rfr_subdivisions.md`, GitLab issue
+  `microsdvl/bookkeep#1`, and the local untracked notes `micros/subdivisions-refactor.md` (its "Status per table" list).
+  Re-read them before touching any `SubDivId`; "procedures already updated" claims have been wrong before — verify
+  each procedure. Background: [cwatis-bookkeep-reference-id-mismatch](SolvedProblems/micros-libraries/cwatis-bookkeep-reference-id-mismatch.md).
+
 ## Rules that always apply
 
 **SQL procedures**
