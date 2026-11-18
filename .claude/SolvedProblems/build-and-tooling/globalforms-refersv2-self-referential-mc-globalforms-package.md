@@ -1,6 +1,6 @@
 # GlobalForms: adding Refers.V2 pulls in a NuGet package named MC_GlobalForms — which collides with the project itself
 
-**Date:** 2026-08-24 · **Project:** GlobalForms (`D:\projects\micros\globalforms`, `.csproj` assembly/root namespace `MC_GlobalForms`). **Component:** `GlobalForms\MC_GlobalForms.csproj` + `packages.config`, triggered by installing `Refers.V2` via the VS NuGet UI.
+**Date:** 2026-08-24 · **Project:** GlobalForms (`D:\projects\projects\globalforms`, `.csproj` assembly/root namespace `MC_GlobalForms`). **Component:** `GlobalForms\MC_GlobalForms.csproj` + `packages.config`, triggered by installing `Refers.V2` via the VS NuGet UI.
 
 ## History: this is not new in Refers.V2, GlobalForms just never had a live reference during the window it applies to
 

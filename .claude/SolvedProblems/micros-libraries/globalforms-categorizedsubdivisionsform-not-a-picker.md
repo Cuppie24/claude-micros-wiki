@@ -23,7 +23,7 @@ var selected = form.SelectedModels; // List<CategorizedSubdivisionModel>, 1+ ite
 **Checklist / rule**
 - `global_db.categorized_subdivisions` (columns: `Id`, `SDId`, `TypeId`/`Type`, `Code`, `Name`) plus `global_db.subdivision_categories` (columns: `Id`, `Name`) is a shared cross-product mechanism (added to `MC_GlobalForms` ~Aug 2026) intended to replace each product's own local "subdivisions" table (e.g. CWATIS's now-retired `cwatis.subdivisions`/`SubdivisionsRepository`). A `SubdivisionCategory` is a named reference row, looked up via `new SubdivisionCategoriesRepository().GetAsync()` and matched by `Name` - there's no fixed/portable numeric id to hardcode, and nothing auto-creates these rows, so a category your product needs may simply not exist yet.
 - Use `CategorizedSubdivisionsRepository`/`ICategorizedSubdivisionsRepository` (`GetAsync(search)` / `AddAsync(sdId, subdivDirectoryTypeId)` / `DeleteAsync(id)`) purely as the data layer - independent of `SelectMode`/picking UI.
-- The `MC_GlobalForms` NuGet package is opaque, but its full source is checked out on this machine at `D:\projects\micros\globalforms` (sibling repo, not a submodule of any product) - read it directly there instead of decompiling `MC_GlobalForms.dll` or guessing from call sites.
+- The `MC_GlobalForms` NuGet package is opaque, but its full source is checked out on this machine at `D:\projects\projects\globalforms` (sibling repo, not a submodule of any product) - read it directly there instead of decompiling `MC_GlobalForms.dll` or guessing from call sites.
 
 Found in: CWATIS, refactoring `Controls/Subdivisions/View/SubdivisionPickerControl.cs` (2026-08-25, pre-`SelectMode`). `SelectMode`/`SelectedModels` added directly to `CategorizedSubdivisionsForm` in the `globalforms` repo the same day.
 
@@ -61,6 +61,6 @@ using (var form = new CategorizedSubdivisionsForm(
 
 **Checklist / rule**
 - A `public` parameterless WinForms `Form`/`UserControl` ctor is not proof it's runtime-usable — designer-only ctors that `throw` unless `DesignMode` are a common DI-enforcement pattern. Check the ctor body (or disassemble the pinned DLL) for `DesignMode` + `throw` before using object-initializer syntax on it.
-- When a `globalforms` type misbehaves, cross-check the **pinned** `MC_GlobalForms.<version>` DLL, not just `D:\projects\micros\globalforms` HEAD — they drift, especially mid-refactor.
+- When a `globalforms` type misbehaves, cross-check the **pinned** `MC_GlobalForms.<version>` DLL, not just `D:\projects\projects\globalforms` HEAD — they drift, especially mid-refactor.
 
 Found in: bookkeep, porting CWATIS's `SubdivisionPickerControl` into `Bookkeep2` and pointing `ContractAdd_EditFormNew`'s subdivision picker at it (2026-08-27). `MC_GlobalForms` 1.1.6.46 in both repos.

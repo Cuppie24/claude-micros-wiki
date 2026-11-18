@@ -1,5 +1,5 @@
-micros
-projects
+# project working copies (each is its own repo)
+/projects/
 
 # .claude: track only instruction/knowledge docs (.md), ignore everything else
 # (personal settings, session state, caches, etc.)

@@ -717,7 +717,7 @@ column should be there; it just isn't on screen. Worse, the next time the VS Des
 truncated set, so the dropped blocks disappear from the `.resx` for good (looks like "the designer deleted my columns").
 "Columns at the end of the list are missing, the ones before them are fine" is the fingerprint. Before assuming the designer
 reverted the file, compare the prefix with the block count. Every grid in a feature folder can be checked at once (run from a file
-written with the Write tool, not a Bash heredoc, if the pattern gets backslashes, see ../SolvedProblems/build-and-tooling/git-bash-mangles-msbuild-slash-flags.md):
+written with the Write tool, not a Bash heredoc, if the pattern gets backslashes, see claude-global/SolvedProblems/tooling/git-bash-mangles-msbuild-slash-flags.md):
 
 ```python
 import re, sys
@@ -802,7 +802,7 @@ non-zero value: the aggregate reads the cell values, not the drawn text. Precede
 
 **Symptom** (CWATIS invoice form, 2026-10-21): edit a cell (price) in a grid with a footer, then click the footer row directly ->
 «Ошибка приложения»: "Индекс за пределами диапазона ... Имя параметра: index". A plain footer click does nothing; edit + click on a
-data row is fine. Stack (from the `Errors\*.err` log, see `../../micros/CWATIS/.claude/docs/SolvedProblems/cwatis-error-dialog-stack-trace-log.md`):
+data row is fine. Stack (from the `Errors\*.err` log, see `../../projects/CWATIS/.claude/docs/SolvedProblems/cwatis-error-dialog-stack-trace-log.md`):
 `ArrayList.get_Item` <- `C1.Win.C1FlexGrid.RowCollection.get_Item` <- `C1FlexGrid.DrawRow` <- `C1FlexGridBase.OnPaint` — no app frame at all.
 
 **Mechanism (inferred, not instrumented):** clicking the footer while an editor is open commits the edit (`AfterEdit`) and then moves the

@@ -42,7 +42,7 @@ Precedent: `CWATIS/Forms/Contracts/BkLink/Repositories/BkCntrRepository.cs` (`Re
 
 - Never assume a plain-looking int id from a CWATIS model is valid in a bookkeep procedure call just because the parameter name matches — check whether the underlying bookkeep table is Host-scoped/bookkeep-local first.
 - Don't assume a human-readable code is a safe fallback either once you've ruled out the id - a shared code string across two independently-administered tables can still map to different underlying rows. Look for an actual shared foreign-key reference table (here, `global_db.rfr_subdivisions`) before trusting a code match.
-- When in doubt, get live data before switching the matching column - the `MCode`/`Code` mixup earlier in this same investigation (see `../../../micros/CWATIS/.claude/docs/SolvedProblems/contractsmap-zero-instead-of-null.md`) and the `SDId=256` outlier here were both things a plausible-sounding naming argument would have gotten wrong.
+- When in doubt, get live data before switching the matching column - the `MCode`/`Code` mixup earlier in this same investigation (see `../../../projects/CWATIS/.claude/docs/SolvedProblems/contractsmap-zero-instead-of-null.md`) and the `SDId=256` outlier here were both things a plausible-sounding naming argument would have gotten wrong.
 - `MC_GlobalForms.HelperClasses.Numeric` and `Refers.Numeric` are two different classes with the same name - a file with both `using MC_GlobalForms.HelperClasses;` and `using Refers;` gets CS0104 on unqualified `Numeric.Int(...)`; qualify explicitly rather than dropping either using.
 
 ## Also seen entirely within bookkeep, no CWATIS involved (2026-08-21)

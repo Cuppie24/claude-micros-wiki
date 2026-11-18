@@ -1,6 +1,6 @@
 # GlobalForms's SmartGrid_Extentions.cs had no way to correctly read a bound model off a C1DataCollectionBindingList-backed row
 
-**Date:** 2026-08-24 · **Project:** GlobalForms (`D:\projects\micros\globalforms`). **Component:** `GlobalForms\HelperClasses\Common\Extentions\SmartGrid_Extentions.cs` (`MicrosSmartGrid.SmartGrid` extension methods).
+**Date:** 2026-08-24 · **Project:** GlobalForms (`D:\projects\projects\globalforms`). **Component:** `GlobalForms\HelperClasses\Common\Extentions\SmartGrid_Extentions.cs` (`MicrosSmartGrid.SmartGrid` extension methods).
 
 This is the GlobalForms-side instance of the same underlying `MicrosSmartGrid`/`C1DataCollectionBindingList` gotcha documented for CWATIS in `../../Topics/SmartGridConventions.md` ("Gotcha: `Rows[row].DataSource` is not always the bound model directly") — same root cause, but GlobalForms has its own separate extension-methods file and, until now, no fix for it. Read that entry too if working on grid code in either project; this entry is GlobalForms-specific (its own file, its own missing helper).
 

@@ -1,8 +1,10 @@
-# Shared knowledge base (all projects under this folder)
+# Micros / WinForms knowledge base (all projects under this folder)
 
-This folder (`.claude/` next to this file, git repo `claude-micros-wiki`) holds knowledge shared by every project: the
-micros libraries (GlobalForms, Refers, SmartGrid, CallService, …), ComponentOne/WinForms, MySQL, build/CI and tooling.
-Project-only knowledge lives in that project's own `CLAUDE.md` and `.claude/docs/` (e.g. `micros/CWATIS`).
+Repo `claude-micros-wiki`. Loaded for every project in `projects/` next to this `.claude/` folder (git-ignored here;
+each project is its own repo). Covers the company stack: WinForms, ComponentOne, our component libraries (GlobalForms,
+Refers, SmartGrid, CallService, Profile, …), company MySQL rules and CI. Universal rules (documenting solutions, the
+user's preferences, wiki rules, shell gotchas, general MySQL/tool problems) are in the global `claude-global` repo,
+imported from `~/.claude/CLAUDE.md`. Project-only knowledge lives in the project's own `CLAUDE.md` and `.claude/docs/`.
 Find this folder by locating this file — never hardcode its path.
 
 ## Layout
@@ -11,39 +13,21 @@ Find this folder by locating this file — never hardcode its path.
 .claude/
   CLAUDE.md          rules + index (this file, always loaded)
   Topics/            convention / how-to pages, read on demand
-  SolvedProblems/    one file per solved problem, grouped by area:
-    componentone/ winforms/ micros-libraries/ build-and-tooling/ mysql/ windows-native/ web/
+  SolvedProblems/    one file per solved problem: componentone/ winforms/ micros-libraries/ build-and-tooling/
 ```
 
-## Recording solved problems and gotchas
+## Where solved problems go (procedure: `document-solution` skill)
 
-When a problem needed real investigation (or its error pointed away from the cause), or you hit a library/tool gotcha,
-write it down before finishing the task:
-
-1. **Where** — knowledge useful beyond one project goes here; knowledge about one project's own code goes to that
-   project's `.claude/docs/` and its `CLAUDE.md` index.
-   - Gotcha inside an area that has a topic page → append a `## Gotcha: …` section to that page.
-   - Otherwise → new file `SolvedProblems/<area>/<short-kebab-topic>.md` (pick the closest area folder).
-2. **Index it** — add one line to the index below (or the project's index): link + one sentence containing the
-   verbatim symptom text, so it can be found by searching the error. An unindexed file is invisible.
-3. **Content** — *Symptom* (exact error/behaviour, where it shows: designer / build / runtime), *Root cause* (the
-   mechanism; say so when the error points at the wrong component), *Fix* (minimal code), *How to recognise / avoid*.
-   Reusable, no task-specific details, dated, project named. Say how a claim was verified (reflection, docs, test).
-4. Topic pages: the rule, wrong way vs right way (short code), why, precedents.
-5. Commit the change in this repo (and in the project repo for project docs).
-
-## Working with this user
-
-- C#/.NET (WinForms) developer. When explaining another language (e.g. Python in the LangChain prototypes), contrast it
-  with the C# equivalent; skip programming basics.
-- Status write-ups (migration/refactor logs, progress notes): keep **Finished** and **Not finished / in progress** in
-  separate lists — never one blended sentence.
+- About one project's own code → that project's `.claude/docs/`, indexed in its `CLAUDE.md`.
+- About the company stack → here: a `## Gotcha: …` section of the matching topic page, or
+  `SolvedProblems/<area>/<topic>.md` plus one index line below.
+- About a general tool / language / OS / plain MySQL → `claude-global`.
 
 ## Ongoing cross-repo work
 
 - **SubDivId migration** (bookkeep local `subdivisions` ids → `global_db.rfr_subdivisions.SDId`, table by table):
-  tracked in `micros/bookkeep/Задача - Перенос SubDivId на global_db.rfr_subdivisions.md`, GitLab issue
-  `microsdvl/bookkeep#1`, and the local notes `micros/subdivisions-refactor.md` next to this `.claude/` folder (not in any repo; its "Status
+  tracked in `projects/bookkeep/Задача - Перенос SubDivId на global_db.rfr_subdivisions.md`, GitLab issue
+  `microsdvl/bookkeep#1`, and the local notes `projects/subdivisions-refactor.md` next to this `.claude/` folder (not in any repo; its "Status
   per table" list).
   Re-read them before touching any `SubDivId`; "procedures already updated" claims have been wrong before — verify
   each procedure. Background: [cwatis-bookkeep-reference-id-mismatch](SolvedProblems/micros-libraries/cwatis-bookkeep-reference-id-mismatch.md).
@@ -67,7 +51,7 @@ BEGIN ... END;
 ```
 
 **Shared libraries are ours** — `MC_GlobalForms`, `Refers`, `SmartGrid`, `Profile`, … are developed by the same team
-(sources in sibling repos under `micros/`, e.g. `micros/globalforms`). When one lacks something a task needs, say so
+(sources in sibling repos under `projects/`, e.g. `projects/globalforms`). When one lacks something a task needs, say so
 and ask whether to extend it; don't silently swap in a different component. A "can't do X" finding may be outdated
 the same day — re-check the live source.
 
@@ -76,10 +60,6 @@ the same day — re-check the live source.
 **Publishing GlobalForms** — bump the patch number in `GlobalForms\Properties\AssemblyInfo.cs` (both attributes),
 push to `development`; CI publishes `MC_GlobalForms` to the internal feed. Consumers bump their reference by hand.
 Version-pin traps with `Refers.V2`: [GlobalFormsPublishing.md](Topics/GlobalFormsPublishing.md).
-
-**Wiki** — when asked to save to a project wiki (`Wiki`/`<Project>Wiki` in the project root, unless the project
-`CLAUDE.md` says otherwise): update an existing page before creating one; thematic subfolders; readable filenames in
-the project language; facts about the system only (no task notes); link pages with `[[Page Name]]`.
 
 ## Topics
 
@@ -136,27 +116,3 @@ the project language; facts about the system only (no task notes); link pages wi
 - [globalforms-refersv2-self-referential-mc-globalforms-package](SolvedProblems/build-and-tooling/globalforms-refersv2-self-referential-mc-globalforms-package.md) — installing `Refers.V2` into GlobalForms adds a package of itself → `CS0121` everywhere; remove that reference.
 - [system-valuetuple-reference-removed-on-nuget-upgrade](SolvedProblems/build-and-tooling/system-valuetuple-reference-removed-on-nuget-upgrade.md) — System.ValueTuple `FileNotFoundException` after a NuGet bump; restore the `HintPath` reference and `bindingRedirect`.
 - [gitlab-ci-nuget-restore-missing-internal-feed](SolvedProblems/build-and-tooling/gitlab-ci-nuget-restore-missing-internal-feed.md) — CI can't restore internal packages: no repo `NuGet.Config`; commit one with the `mars.micros.uz:9109` source.
-- [gitlab-ci-shallow-clone-breaks-commit-based-versioning](SolvedProblems/build-and-tooling/gitlab-ci-shallow-clone-breaks-commit-based-versioning.md) — wrong/decreasing computed versions in CI; set `GIT_DEPTH: 0` and fetch tags.
-- [git-bash-mangles-msbuild-slash-flags](SolvedProblems/build-and-tooling/git-bash-mangles-msbuild-slash-flags.md) — `MSB1008: only one project can be specified`: Git Bash rewrites `/flag` args, use PowerShell. Also the Bash tool collapses doubled backslashes even in quoted heredocs.
-- [github-readme-image-stale-raw-cdn-and-bom-corruption](SolvedProblems/build-and-tooling/github-readme-image-stale-raw-cdn-and-bom-corruption.md) — README image broken after a fix: BOM-corrupted PNG, then a stale raw CDN object; wait and re-probe.
-- [git-bash-sed-in-place-strips-crlf](SolvedProblems/build-and-tooling/git-bash-sed-in-place-strips-crlf.md) — Git Bash `sed -i` rewrites the whole file with LF even with no match (`core.autocrlf` hides it); use Edit or PowerShell.
-
-### mysql
-- [mysql-in-param-mistaken-for-output](SolvedProblems/mysql/mysql-in-param-mistaken-for-output.md) — `SELECT … INTO _param` on an `IN` param never reaches the caller; make it `INOUT`.
-- [find-in-set-json-array-drops-first-last-element](SolvedProblems/mysql/find-in-set-json-array-drops-first-last-element.md) — `FIND_IN_SET` fed `"[1,2,3]"` misses the first and last id; pass `string.Join(",", ids)`.
-- [pomelo-mysql-ignores-totable-schema](SolvedProblems/mysql/pomelo-mysql-ignores-totable-schema.md) — `Table '<db>.<x>' doesn't exist`: Pomelo ignores the schema in `ToTable`; bridge with a view. Then `Unknown column 'id'` with snake-case naming.
-- [mysql-on-duplicate-key-burns-auto-increment](SolvedProblems/mysql/mysql-on-duplicate-key-burns-auto-increment.md) — get-or-create via `INSERT … ON DUPLICATE KEY` burns an id per call; SELECT first.
-- [mysql-procedure-literal-collation-from-creating-connection](SolvedProblems/mysql/mysql-procedure-literal-collation-from-creating-connection.md) — `Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT)`: literals/params take the creating session's charset; declare `CHARSET … COLLATE …` on every compared string param.
-- [mysql-tree-nested-counts-upward-cte](SolvedProblems/mysql/mysql-tree-nested-counts-upward-cte.md) — "count including descendants" via `FIND_IN_SET` on a path is quadratic; carry counts up `ParentId` in one recursive CTE (`UNION ALL` + `SUM`).
-
-### windows-native
-- [tauri-window-center-work-area-vs-monitor-size](SolvedProblems/windows-native/tauri-window-center-work-area-vs-monitor-size.md) — vertical jump on resize: `center()` uses the work area, `monitor.size()` the full screen.
-- [composition-rounded-rect-round-only-some-corners](SolvedProblems/windows-native/composition-rounded-rect-round-only-some-corners.md) — round only some corners: oversize the rounded rect, `ShapeVisual` clips it.
-- [composition-animated-values-not-readable-from-app](SolvedProblems/windows-native/composition-animated-values-not-readable-from-app.md) — animated Composition values can't be read back; mirror the animation app-side.
-- [win32-overlay-httransparent-does-not-pass-clicks-cross-process](SolvedProblems/windows-native/win32-overlay-httransparent-does-not-pass-clicks-cross-process.md) — `HTTRANSPARENT` doesn't pass clicks to other processes; split render and hit-test windows.
-
-### web
-- [css-dark-mode-media-query-not-gated-by-forced-theme](SolvedProblems/web/css-dark-mode-media-query-not-gated-by-forced-theme.md) — near-invisible headings with OS-dark + app-forced-light; declare `color` on the component class.
-- [oxlint-react-refs-taints-whole-object-property](SolvedProblems/web/oxlint-react-refs-taints-whole-object-property.md) — oxlint `react(refs)` flags every property once one is a `ref`; destructure the ref.
-- [outline-postgres-sslmode-required](SolvedProblems/web/outline-postgres-sslmode-required.md) — self-hosted Outline SSL error against plain Postgres; `PGSSLMODE=disable`.
-- [outline-self-hosted-first-team-requires-oauth-oidc](SolvedProblems/web/outline-self-hosted-first-team-requires-oauth-oidc.md) — `providers: []` on a fresh Outline: the first team needs OAuth/OIDC (use dex locally).

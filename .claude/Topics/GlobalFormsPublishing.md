@@ -1,13 +1,13 @@
 # Publishing GlobalForms (the `MC_GlobalForms` NuGet package)
 
-How a change to the shared GlobalForms library (`D:\projects\micros\globalforms`, GitLab `microsdvl/globalforms`) reaches the consuming
+How a change to the shared GlobalForms library (`D:\projects\projects\globalforms`, GitLab `microsdvl/globalforms`) reaches the consuming
 products (CWATIS, bookkeep, SubdivFinances, ...). Verified 2026-10-15 from the repo's `.gitlab-ci.yml`, `AssemblyInfo.cs` history and an actual
 push (`8f1f0fe..18bc1dc`). The pipeline run itself was not watched — see "Not verified".
 
 ## The process (what a developer does)
 
 1. Make the change in `GlobalForms\` and build it locally (`MC_GlobalForms.sln` or `GlobalForms\MC_GlobalForms.csproj`, MSBuild — use the
-   PowerShell tool, not Git Bash, see `../SolvedProblems/build-and-tooling/git-bash-mangles-msbuild-slash-flags.md`).
+   PowerShell tool, not Git Bash, see `claude-global/SolvedProblems/tooling/git-bash-mangles-msbuild-slash-flags.md`).
 2. **Bump the patch (last) version number by 1**, in `GlobalForms\Properties\AssemblyInfo.cs` — both lines, kept equal:
    ```csharp
    [assembly: AssemblyVersion("1.1.7.12")]
@@ -41,7 +41,7 @@ Work on a feature branch and merge into `development` when the change should be 
   by hand to the new version; nothing updates them. Until then the consumer compiles against the old API (e.g. a new public property is "not found").
 - To get the new package into the solution's `packages\` folder without opening Visual Studio (verified 2026-10-15 for CWATIS, 1.1.7.12; PowerShell tool):
   ```powershell
-  msbuild CWATIS.csproj /t:restore /p:RestorePackagesConfig=true /p:SolutionDir="D:\projects\micros\CWATIS\"
+  msbuild CWATIS.csproj /t:restore /p:RestorePackagesConfig=true /p:SolutionDir="D:\projects\projects\CWATIS\"
   ```
   Without `RestorePackagesConfig=true` a plain `/t:restore` does nothing for a `packages.config` project (see the ComponentOne note in the solved-problems index).
   `SolutionDir` (with trailing `\`) makes the package land in the solution-level `packages\` folder that the `HintPath` points to.

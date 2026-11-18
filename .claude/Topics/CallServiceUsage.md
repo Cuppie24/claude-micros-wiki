@@ -8,7 +8,7 @@ actually runs" below — this matters if you go looking for the implementation).
 Written/verified 2026-09-28 from the CWATIS codebase (306 `CallProcedureDT`, 65 `GetTable`,
 56 `CallProcedureNonQuery`, 32 `ExecuteString`, 15 `GetValueFromFunc`, 13 `DeleteLines`,
 12 `UpdateCell` call sites), by decompiling the real assembly with `ilspycmd`, by reading the
-client source in `D:\projects\micros\webserviceclient` (repo `microsdvl/webserviceclient`), and —
+client source in `D:\projects\projects\webserviceclient` (repo `microsdvl/webserviceclient`), and —
 for `DeleteLines` specifically — by reading the actual **server** source, which is not checked out
 under `D:\projects\micros` at all but exists as a bare mirror at
 `D:\git mirrors\websvc.legacy.server.git` (repo `microsdvl/websvc.legacy.server`, real code on its
@@ -25,7 +25,7 @@ and it is not obvious which one your code calls:
    not in any local repo.
 2. `packages\WebServiceClient.1.0.0.30\lib\net48\WebServiceClient.dll` — a newer, gRPC-based
    implementation, namespace `Core.Client`. Its source **is** local, in
-   `D:\projects\micros\webserviceclient\source\Core\Core.Client\CallService.cs`.
+   `D:\projects\projects\webserviceclient\source\Core\Core.Client\CallService.cs`.
 
 `CWATIS\GlobalUsings.cs` has:
 
@@ -97,7 +97,7 @@ section below — including one confirmed bug in it. For every other method (`Ca
 Not used in CWATIS and not recommended for new code: `CallProcedureNonQueryEx`, `Save1Execute`,
 `MultiSave1Execute`, `EditExecute`, `RWSDataToBookkeep`, `BookkeepToRWS_OtherPayments`,
 `GetProfileKeysValue`/`AddProfileKeyValue` (use `ProfileKeysValueManager` instead — see
-`../../micros/CWATIS/.claude/docs/ProfileKeysValueManager.md`), `GetPermission`.
+`../../projects/CWATIS/.claude/docs/ProfileKeysValueManager.md`), `GetPermission`.
 
 ### CallProcedureDT — the standard read
 
@@ -125,7 +125,7 @@ Rules:
    procedure doesn't have that parameter yet (see `../SolvedProblems/micros-libraries/callproceduredt-unknown-params-silently-dropped.md`).
    Procedures live only on the DB server, not in the repo — check with `SHOW CREATE PROCEDURE`.
 4. **Lists of ids go as `string.Join(",", ids)`**, never `JsonConvert.SerializeObject(ids)` —
-   `FIND_IN_SET` on the server chokes on the brackets (see `../SolvedProblems/mysql/find-in-set-json-array-drops-first-last-element.md`).
+   `FIND_IN_SET` on the server chokes on the brackets (see `claude-global/SolvedProblems/mysql/find-in-set-json-array-drops-first-last-element.md`).
 5. **Every call blocks the calling thread** (synchronous WCF). In repositories wrap it in
    `await Task.Run(() => ...)`; forms `await` the repository.
 6. Check the `DataTable` for `null` before `.Rows` — errors come back as `null`, not exceptions.
@@ -414,7 +414,7 @@ status, wrap the call in `try/catch` and map to a result object
    key against `SHOW COLUMNS`.
 3. **`HelperMethodClasses.UniSaver(...)`** looks generic but is hardcoded to `cwatis.pricecards`,
    and its `List<int>` overload throws on the second id
-   (`../../micros/CWATIS/.claude/docs/SolvedProblems/helpermethodclasses-unisaver-hardcoded-pricecards.md`). Use your own `SaveFieldAsync`.
+   (`../../projects/CWATIS/.claude/docs/SolvedProblems/helpermethodclasses-unisaver-hardcoded-pricecards.md`). Use your own `SaveFieldAsync`.
 4. **Passing a model object** writes every public property, including ones you did not intend
    (ids, computed fields). Prefer an explicit `ExpandoObject`.
 5. **Strings with quotes/backslashes** are JSON-escaped by Newtonsoft and MySQL understands the
