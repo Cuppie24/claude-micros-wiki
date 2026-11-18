@@ -43,7 +43,8 @@ write it down before finishing the task:
 
 - **SubDivId migration** (bookkeep local `subdivisions` ids → `global_db.rfr_subdivisions.SDId`, table by table):
   tracked in `micros/bookkeep/Задача - Перенос SubDivId на global_db.rfr_subdivisions.md`, GitLab issue
-  `microsdvl/bookkeep#1`, and the local untracked notes `micros/subdivisions-refactor.md` (its "Status per table" list).
+  `microsdvl/bookkeep#1`, and the local notes `micros/subdivisions-refactor.md` next to this `.claude/` folder (not in any repo; its "Status
+  per table" list).
   Re-read them before touching any `SubDivId`; "procedures already updated" claims have been wrong before — verify
   each procedure. Background: [cwatis-bookkeep-reference-id-mismatch](SolvedProblems/micros-libraries/cwatis-bookkeep-reference-id-mismatch.md).
 
