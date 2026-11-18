@@ -1,103 +1,140 @@
-# Global CLAUDE.md
+# Shared knowledge base (all projects under this folder)
 
-## Knowledge Base — Solved Problems & Gotchas
+This folder (`.claude/` next to this file, git repo `claude-micros-wiki`) holds knowledge shared by every project: the
+micros libraries (GlobalForms, Refers, SmartGrid, CallService, …), ComponentOne/WinForms, MySQL, build/CI and tooling.
+Project-only knowledge lives in that project's own `CLAUDE.md` and `.claude/docs/` (e.g. `micros/CWATIS`).
+Find this folder by locating this file — never hardcode its path.
 
-Whenever you solve a **non-obvious problem** (the root cause required real investigation, or the error message pointed away from the actual cause) or discover a **library/tool gotcha** (surprising default, misleading API, designer quirk), document it in this directory (`C:\Users\ishnazarov.saidnazar\.claude\`) before finishing the task — future sessions must not re-derive it.
+## Layout
 
-### Where to write
+```
+.claude/
+  CLAUDE.md          rules + index (this file, always loaded)
+  Topics/            convention / how-to pages, read on demand
+  SolvedProblems/    one file per solved problem, grouped by area:
+    componentone/ winforms/ micros-libraries/ build-and-tooling/ mysql/ windows-native/ web/
+```
 
-1. **Gotcha in an area covered by an existing topic file** (SmartGridConventions.md, TreeFlexGridConventions.md, …) — append a `## Gotcha: …` section to that file. Do not create a duplicate file.
-2. **Standalone solved problem** — create a new file `SolvedProblems\<short-kebab-case-topic>.md`, one file per problem.
-3. **Always add a link** in the index below (for new topic files — a new section like the existing ones). The link line in this CLAUDE.md is what makes the knowledge reachable in every session; an unlinked file is invisible.
+## Recording solved problems and gotchas
 
-### What to write in a solved-problem file
+When a problem needed real investigation (or its error pointed away from the cause), or you hit a library/tool gotcha,
+write it down before finishing the task:
 
-- **Symptom** — the exact error message / observed behavior, verbatim (that's what gets searched for), and where it appears (VS designer / runtime / build).
-- **Root cause** — the actual mechanism, not just the workaround. Note explicitly when the error message points at the wrong component.
-- **Fix** — the concrete change with a minimal code sample.
-- **Checklist / rule** — how to avoid or recognize it next time.
-- Keep it **reusable**: no task-specific details; project file paths only as precedent references. Date it and name the project where it was found.
+1. **Where** — knowledge useful beyond one project goes here; knowledge about one project's own code goes to that
+   project's `.claude/docs/` and its `CLAUDE.md` index.
+   - Gotcha inside an area that has a topic page → append a `## Gotcha: …` section to that page.
+   - Otherwise → new file `SolvedProblems/<area>/<short-kebab-topic>.md` (pick the closest area folder).
+2. **Index it** — add one line to the index below (or the project's index): link + one sentence containing the
+   verbatim symptom text, so it can be found by searching the error. An unindexed file is invisible.
+3. **Content** — *Symptom* (exact error/behaviour, where it shows: designer / build / runtime), *Root cause* (the
+   mechanism; say so when the error points at the wrong component), *Fix* (minimal code), *How to recognise / avoid*.
+   Reusable, no task-specific details, dated, project named. Say how a claim was verified (reflection, docs, test).
+4. Topic pages: the rule, wrong way vs right way (short code), why, precedents.
+5. Commit the change in this repo (and in the project repo for project docs).
 
-### What to write in topic (convention) files
+## Rules that always apply
 
-The rule, the wrong way vs the right way (short code samples), why, and codebase precedents — same style as the existing sections in SmartGridConventions.md. Verified facts beat assumptions: note how a claim was confirmed (reflection, local API docs, instrumented test).
-
-### Index of solved problems
-
-- [WinForms UserControl design-time safety](SolvedProblems/winforms-usercontrol-design-time-safety.md) — VS designer breaks ("Only objects of the type C1DockingTabPage can be added…") on forms hosting UserControls that do live work in constructors/Load; `DesignMode` is false for nested controls — use `LicenseManager.UsageMode`.
-- [C1DockingTab: disable tab switching without hiding tabs](SolvedProblems/c1dockingtab-disable-tab-switching.md) — no per-page disable property exists; cancel the built-in `SelectedIndexChanging` (`CancelEventArgs`) instead of `ShowTabs = false`; also: disabling a container panel preserves children's own `Enabled`/`ReadOnly` flags for free.
-- [C1ToolBar buttons don't gray when parent disabled](SolvedProblems/c1toolbar-not-graying-when-parent-disabled.md) — C1ToolBar paints buttons from `C1Command.Enabled`, not the control hierarchy; disabling a container blocks input but changes nothing visually — disable the commands (with snapshot/restore), and set a grid's own `Enabled` for the disabled look.
-- [WinForms Button.DialogResult closes a modal before an async Click handler's awaited work finishes](SolvedProblems/winforms-button-dialogresult-async-click.md) — a Designer-set `DialogResult` on a button auto-closes the dialog as soon as the synchronous part of `async void Click` returns, not when the awaited work completes; set `DialogResult` in code, only at the actual success point.
-- [CWATIS and bookkeep don't share id spaces for their own per-org reference tables](SolvedProblems/cwatis-bookkeep-reference-id-mismatch.md) — bookkeep-local tables like `bookkeep.subdivisions` are Host-scoped with their own id sequence; a same-shaped id from elsewhere silently resolves to the wrong row instead of erroring. Fix is matching via the shared `global_db.rfr_subdivisions.SDId`, not by id and not by code (`DocHelper.ResolveLocalSubDivId` in bookkeep). Also recurs entirely within bookkeep's own forms during its ongoing local-to-global SubDivId migration.
-- [Refers.CustomCombo.EndAddCustomItem resets the selection and replaces the whole item list](SolvedProblems/customcombo-endaddcustomitem-resets-selection.md) — every call does `DataSource = null` (selection lost, never restored automatically) and the passed list *replaces* rather than appends, so the "fill blank item, then top up" pattern silently drops the blank; with diff-based saving the lost selection becomes a real `UPDATE` and a `0` in a nullable FK blows up on the constraint.
-- [ContractsMap maps an absent DB value to 0, not null, on several nullable ContractModel fields](SolvedProblems/contractsmap-zero-instead-of-null.md) — `ExecuterId`/`ContractSellerId`/`ContractBuyerId`/`CurrencyId`/`CurrencyPaymentId`/`InitiatorId`/`SdId` etc. become `0` (not `null`) when the DB value is NULL, despite being typed `int?`. A `== null` check misses it; check `<= 0` instead when treating these as "is this set".
-- [CWATIS stored procedures live only in the live DB, never in the repo](SolvedProblems/cwatis-stored-procedures-not-in-repo.md) — zero `.sql` files exist anywhere in the repo; a procedure's schema can't be confirmed by grepping, and neither the `definer=` line nor sibling naming conventions reliably indicate which schema it lives in — ask the user for the exact `schema.procedure_name` rather than guessing.
-- [Tauri `Window::center()` centers on work area; `monitor.size()`/`position()` give the full screen](SolvedProblems/tauri-window-center-work-area-vs-monitor-size.md) — mixing `center()` with hand-rolled multi-monitor/cursor-aware centering math causes a small, consistent vertical jump (half the taskbar height) on every resize after show; make all manual centering use `monitor.work_area()`, not `size()`/`position()`.
-- [MySQL procedure: `IN` parameter mistaken for an output channel](SolvedProblems/mysql-in-param-mistaken-for-output.md) — `SELECT LAST_INSERT_ID() INTO _someIdParam` against a param declared `IN` (not `OUT`/`INOUT`) compiles and runs with no error, but only assigns a local copy the caller never sees; a C# repository trusting that param's "returned" value as the new row's id gets a silently-wrong id that then fails on any follow-up call keyed on it. Fix is `IN` → `INOUT` on that one parameter.
-- [`HelperMethodClasses.UniSaver` looks generic, is hardcoded to `cwatis.pricecards`](SolvedProblems/helpermethodclasses-unisaver-hardcoded-pricecards.md) — signature (`ID, UserId, colname, value`) reads like a general single-column-update helper for `global_db.UniSaver`, but the schema/table are hardcoded in the method body to `cwatis`/`pricecards`; calling it for any other table compiles and runs but silently touches the wrong table. Write a small `SaveFieldAsync(schema, table, id, userId, colname, value)` in the owning repository instead.
-- [`global_db.UniSaver`'s `schema` argument must be the table's real physical schema, verified per-table](SolvedProblems/unisaver-schema-must-be-physical-not-procedure-namespace.md) — a wrong schema string produces a MySQL syntax error deep in UniSaver's generated SQL. `rfr_subdivisions` lives in `global_db` (confirmed 2026-08-18) — an earlier version of this entry wrongly generalized that to all `rfr_*` tables based on other tables living in `refers`; that generalization doesn't hold. Verify each table's real schema individually via its own call sites, don't infer it from a procedure's namespace or from a same-family table's precedent.
-- [Git Bash mangles Windows-style `/flag` arguments (MSBuild etc.)](SolvedProblems/git-bash-mangles-msbuild-slash-flags.md) — running MSBuild's `/p:...`/`/nologo`-style switches through the Bash tool gets them silently rewritten as POSIX-style paths (MSYS path-conversion), producing a confusing MSBuild-side argument error (`MSB1008: only one project can be specified`) that doesn't point at the shell at all. Use the PowerShell tool for any Windows CLI that takes `/flag` syntax; `--`/`-` style flags (npm, git) are unaffected.
-- [SubdivFinances: CallService.cs is dead code, and the `Refers` submodules are never checked out](SolvedProblems/subdivfinances-callservice-and-refers-are-external.md) — `SubdivFinances\CallService.cs` looks like the active implementation but is 100% commented out; the real `CallService`/`GRP_Client` type resolves via a `GlobalUsings.cs` alias into the external `Core.Client`/`GRP-Client.V2` package. `Refers`-namespace classes (`RfrSubDivisionsForm`, `CustomCombo`, `TDBG`, …) come from the precompiled `Refers.V2` NuGet package, not the (uninitialized, empty) `submodules/refers` git submodule. Both are opaque external binaries from this repo — don't try to find or edit their source here.
-- [SubdivFinances/Bookkeep: designer FileNotFoundException from a transitive package-version mismatch](SolvedProblems/subdivfinances-refersv2-mcglobalforms-version-mismatch.md) — `packages.config` does no transitive dependency resolution, so bumping `MC_GlobalForms` independently of `Refers.V2` (whose own nuspec pins an exact `MC_GlobalForms` version baked into its compiled manifest, invisible to grep) leaves two versions in play; since `MC_GlobalForms` is unsigned, `bindingRedirect` can't bridge the drift — the referenced version must match exactly what `Refers.V2` was compiled against. Recurred in Bookkeep 2026-08-21 with different version numbers — confirmed generic, not a one-off; re-extract `Refers.V2`'s nuspec each time rather than assuming a version from precedent. Ideal fix belongs on the producing side (rebuild `Refers.V2`); from the consuming repo, downgrade `MC_GlobalForms` to match and restore.
-- [GitLab CI: NuGet restore fails for internal-feed packages that exist and resolve fine locally](SolvedProblems/gitlab-ci-nuget-restore-missing-internal-feed.md) — neither `Refers.sln` nor `SubdivFinances.csproj` ships a repo-level `NuGet.Config`, so restore falls back to whatever sources are registered machine-wide on whichever runner picks up the job; the internal `mars.micros.uz:9109` feed is absent there. The "Использованные веб-каналы" (used feeds) line at the end of the restore log is the tell — total absence of a source (vs. a listed connection error) means it isn't registered on that runner, not that the package is missing. Fix: commit a `NuGet.Config` at the solution root declaring the internal source (no credentials needed).
-- [System.ValueTuple FileNotFoundException at runtime after a NuGet bump on net47+ packages.config projects](SolvedProblems/system-valuetuple-reference-removed-on-nuget-upgrade.md) — bumping the package makes NuGet delete the `.csproj`'s explicit `<Reference>`/`HintPath` (replaced by a conditional `.targets` import), so the DLL stops being copied to `bin\`; the package's own `.targets` also actively strips any auto-suggested `bindingRedirect` for net471+ targets, so a rebuild can't self-heal it. Fix: manually restore both the `<Reference HintPath>` (new version) and the `bindingRedirect` in `app.config`.
-
-## Working with Wiki
-
-When the user asks to save information to the wiki, follow these rules.
-
-### Location
-
-The wiki is located in a folder named `Wiki` or `<ProjectName>Wiki` in the project root. The project-level `CLAUDE.md` may specify the exact path — that takes priority.
-
-### Rules
-
-1. **Check first** — before creating a new file, look for an existing file covering the same topic. Update it rather than creating a duplicate.
-
-2. **Structured folders** — organize pages in thematic subfolders. Do not dump everything in the root.
-
-3. **No duplication** — if information belongs to an existing page, add a section there. Only create a new file when the topic is clearly distinct.
-
-4. **Readable filenames in the project language** — use meaningful words, not technical identifiers or abbreviations.
-
-5. **Documentation only** — the wiki contains factual information about the system: table schemas, field descriptions, component relationships, workflows. Do not include task-specific observations, conclusions tied to a current development task, or anything that would become stale once the task is done.
-
-6. **Cross-page links** — use Obsidian wiki-link syntax `[[Page Name]]` to connect related pages. Link liberally, even to pages that do not exist yet.
-
-## Coding Conventions (CWATIS)
-
-See `CodingConventions.md` (same directory as this file) for CWATIS coding conventions — MVP pattern (naming, View/Presenter/Repository roles), SmartGrid/TreeFlexGrid usage basics, Designer file rules, class-size decomposition, "no hack solutions" rules, async/await rules, repository/mapper patterns, and the per-feature folder structure.
-
-## SmartGrid Conventions (CWATIS)
-
-See `SmartGridConventions.md` (same directory as this file) for SmartGrid usage conventions — context menu patterns, resolving a row's id when the grid has no bound id column, etc.
-
-## TreeFlexGrid Conventions (CWATIS)
-
-See `TreeFlexGridConventions.md` (same directory as this file) for `Manufacture.Compotents.TreeFlexGrid` usage conventions — the `IDataTree` contract, column setup, and a gotcha where `AutoGenerateColumns = true` silently breaks tree rendering.
-
-## JSONVIewForm (CWATIS)
-
-See `JSONVIewForm.md` (same directory as this file) for how the reusable JSON tree/raw-text viewer dialog works and how to open it from another form.
-
-## FormattedMessageBox (CWATIS)
-
-For a confirmation/message dialog that needs **bold** text (the native `MessageBox` only supports plain text), use `CWATIS.HelperClasses.FormattedMessageBox.Show(...)` instead of `System.Windows.Forms.MessageBox.Show(...)` — mark bold spans with `**double asterisks**`. See `FormattedMessageBox.md` (same directory as this file) for the full API and how it's implemented.
-
-## Using the GitLab CLI (glab)
-
-See `GlabCliUsage.md` (same directory as this file) — installation (`winget install GLab.GLab`, not `GitLab.GLab`), why `glab` doesn't show up on PATH immediately, getting through the interactive `glab auth login` wizard for the self-hosted instance (`gitlab.micros.uz`), why multi-line text (e.g. an issue description) needs to go through `ProcessStartInfo.Arguments` directly rather than a normal `&` call in PowerShell 5.1, the three priority labels on `microsdvl/smartgrid` to apply when creating work items there, why scoped (`key::value`) labels render as a flat pill instead of two-tone on this instance (Community Edition, no Premium license), and: **issues/work items created on GitLab should be written in Russian**, even though this instructions file itself is in English.
-
-## Writing SQL Procedures
-
-Always write the schema prefix on the procedure name — in `CREATE PROCEDURE`/`DROP PROCEDURE` statements, and anywhere else the procedure is referenced (calls, grants, etc.). Never emit a bare procedure name.
+**SQL procedures**
+- Always schema-qualify the procedure name (`CREATE`/`DROP`/calls/grants). Never a bare name.
+- Always ``definer = bookkeep@`%` ``, whatever the schema.
+- Procedures that insert/update/delete entity rows log every changed row via the table schema's `add_rec_info`
+  (`cwatis.add_rec_info(_Id, 'table', 'CREATE'|'EDIT'|'DELETE', _UserId)`), never `INSERT INTO log_db.*` directly.
+  Take `IN _UserId int`; save `LAST_INSERT_ID()` before logging; log `DELETE` before deleting, inside the transaction;
+  log `EDIT` only for rows that change. Write paths that can't log (`CallService.DeleteLines`, `UpdateCell`, raw SQL)
+  get replaced by a logging procedure. Every grid of DB entities has the «Информация о записи» menu item.
+  Details: [RecordChangeLog.md](Topics/RecordChangeLog.md).
 
 ```sql
-DROP PROCEDURE IF EXISTS bookkeep.Contracts_Get;
-
-create
-    definer = bookkeep@`%` procedure bookkeep.Contracts_Get(...)
-BEGIN
-    ...
-END;
+DROP PROCEDURE IF EXISTS cwatis.WhInventoryReportLine_Add;
+create definer = bookkeep@`%` procedure cwatis.WhInventoryReportLine_Add(...)
+BEGIN ... END;
 ```
+
+**Shared libraries are ours** — `MC_GlobalForms`, `Refers`, `SmartGrid`, `Profile`, … are developed by the same team
+(sources in sibling repos under `micros/`, e.g. `micros/globalforms`). When one lacks something a task needs, say so
+and ask whether to extend it; don't silently swap in a different component. A "can't do X" finding may be outdated
+the same day — re-check the live source.
+
+**GitLab** — issues/work items on `gitlab.micros.uz` are written in **Russian**. CLI usage: [GlabCliUsage.md](Topics/GlabCliUsage.md).
+
+**Publishing GlobalForms** — bump the patch number in `GlobalForms\Properties\AssemblyInfo.cs` (both attributes),
+push to `development`; CI publishes `MC_GlobalForms` to the internal feed. Consumers bump their reference by hand.
+Version-pin traps with `Refers.V2`: [GlobalFormsPublishing.md](Topics/GlobalFormsPublishing.md).
+
+**Wiki** — when asked to save to a project wiki (`Wiki`/`<Project>Wiki` in the project root, unless the project
+`CLAUDE.md` says otherwise): update an existing page before creating one; thematic subfolders; readable filenames in
+the project language; facts about the system only (no task notes); link pages with `[[Page Name]]`.
+
+## Topics
+
+| Page | Read when |
+|---|---|
+| [SmartGridConventions.md](Topics/SmartGridConventions.md) | Any SmartGrid work: DataSource, in-place CRUD on `C1DataCollectionBindingList`, «Информация о записи», footers, model unwrap, per-column permissions via `Tag` JSON, many gotchas |
+| [SmartGridReference.md](Topics/SmartGridReference.md) | SmartGrid component features (RU): multi-row headers, context menu API, tooltips, font zoom, default sort, footer formats, tree mode |
+| [CallServiceUsage.md](Topics/CallServiceUsage.md) | Talking to MySQL from WinForms clients: `CallProcedureDT`/`CallProcedureNonQuery`/`GetTable`/`GetValueFromFunc`/`UniSaver`, binding and null rules, which assembly actually runs |
+| [RecordChangeLog.md](Topics/RecordChangeLog.md) | `log_db` / `add_rec_info` per schema, batch logging, `Main.RecInfoView` menu item, logger limitations |
+| [GlobalFormsPublishing.md](Topics/GlobalFormsPublishing.md) | Releasing `MC_GlobalForms`; consumer version bumps |
+| [GlabCliUsage.md](Topics/GlabCliUsage.md) | `glab` install/auth on the self-hosted instance, multi-line args from PowerShell 5.1, priority labels |
+
+## Solved problems index
+
+### componentone
+- [c1dockingtab-disable-tab-switching](SolvedProblems/componentone/c1dockingtab-disable-tab-switching.md) — no per-page disable on C1DockingTab: cancel `SelectedIndexChanging` instead of `ShowTabs = false`.
+- [c1toolbar-not-graying-when-parent-disabled](SolvedProblems/componentone/c1toolbar-not-graying-when-parent-disabled.md) — C1ToolBar paints from `C1Command.Enabled`; disable the commands (snapshot/restore), not just the container.
+- [c1mainmenu-no-right-alignment](SolvedProblems/componentone/c1mainmenu-no-right-alignment.md) — no right-align property on `C1CommandLink`; use a separate `C1ToolBar` anchored Top|Right.
+- [c1splitterpanel-collapsed-is-visible-not-collapsed](SolvedProblems/componentone/c1splitterpanel-collapsed-is-visible-not-collapsed.md) — `C1SplitterPanel.Collapsed` is really `Visible` (`Collapsed == true` means open); use `Visible`.
+- [c1input-text-assign-hidden-parent](SolvedProblems/componentone/c1input-text-assign-hidden-parent.md) — "Cannot assign text to readonly, disabled or hidden C1Input control" when the parent panel/tab is hidden; set `TextDetached = true`.
+- [c1dropdowncontrol-readonly-hidden-by-base-property](SolvedProblems/componentone/c1dropdowncontrol-readonly-hidden-by-base-property.md) — `ReadOnly = false` via a `C1TextBox` variable doesn't reach `C1DropDownControl`'s own `ReadOnly`; modal/drop-down buttons stay dead.
+- [componentone-license-coverage-blocks-build](SolvedProblems/componentone/componentone-license-coverage-blocks-build.md) — "License Period Expired" / `MSB6006: "lc.exe" … -1` after a C1 bump past the license; revert the package, rebuild the DLL from the local SDK.
+- [vs-designer-c1supertooltip-filenotfound-files-present](SolvedProblems/componentone/vs-designer-c1supertooltip-filenotfound-files-present.md) — designer "Could not load file or assembly 'C1.Win.C1SuperTooltip.4.8…'" with the DLL present. KNOWN ISSUE, cause unconfirmed.
+
+### winforms
+- [winforms-usercontrol-design-time-safety](SolvedProblems/winforms/winforms-usercontrol-design-time-safety.md) — designer breaks ("Only objects of the type C1DockingTabPage can be added…") on UserControls doing live work; nested `DesignMode` is false, use `LicenseManager.UsageMode`.
+- [winforms-button-dialogresult-async-click](SolvedProblems/winforms/winforms-button-dialogresult-async-click.md) — designer-set `Button.DialogResult` closes the modal before `async void Click` finishes; set `DialogResult` in code on success.
+- [winforms-child-control-setup-constructor-vs-load](SolvedProblems/winforms/winforms-child-control-setup-constructor-vs-load.md) — `Cols["X"]` can be null in the constructor after `InitializeComponent()`; do setup in `Load`.
+- [winforms-stale-hardcoded-tab-index-after-tab-inserted](SolvedProblems/winforms/winforms-stale-hardcoded-tab-index-after-tab-inserted.md) — `SelectedIndex == 2` silently wrong after a tab is inserted; grep `SelectedIndex ==`, `TabPages[` after reordering tabs.
+- [webview2-virtualhost-mapping-needs-folder-and-content-copy](SolvedProblems/winforms/webview2-virtualhost-mapping-needs-folder-and-content-copy.md) — `DirectoryNotFoundException` (`0x80070003`) from WebView2: the mapping needs a folder, and Content items need `CopyToOutputDirectory`.
+- [shared-package-property-type-change-stale-resx-blob](SolvedProblems/winforms/shared-package-property-type-change-stale-resx-blob.md) — `InvalidCastException` from `InitializeComponent()` after retyping a designer property in a shared package; stale `.resx` blob.
+- [git-merge-scrambles-resx-grid-entries](SolvedProblems/winforms/git-merge-scrambles-resx-grid-entries.md) — a clean git merge pairs one grid's `ColumnInfo` with another's; check `grep '<data name=' | sort | uniq -d`.
+- [vs-designer-reverts-external-resx-edits](SolvedProblems/winforms/vs-designer-reverts-external-resx-edits.md) — external `.resx` edits are reverted by the designer while the form is open in VS; close it first. Also `sed -i` strips CRLF.
+- [datarow-itemarray-positional-vs-changed-proc-columns](SolvedProblems/winforms/datarow-itemarray-positional-vs-changed-proc-columns.md) — `dr.ItemArray = new object[]{…}` breaks (`FormatException` on Load) after a DB-only proc column change; write columns by name.
+
+### micros-libraries
+- [cwatis-bookkeep-reference-id-mismatch](SolvedProblems/micros-libraries/cwatis-bookkeep-reference-id-mismatch.md) — bookkeep-local reference ids (e.g. `bookkeep.subdivisions`) ≠ global ids; match via `global_db.rfr_subdivisions.SDId`, never by id/code. `X_Local`/`X_Global` columns are stale.
+- [customcombo-endaddcustomitem-resets-selection](SolvedProblems/micros-libraries/customcombo-endaddcustomitem-resets-selection.md) — `CustomCombo.EndAddCustomItem` resets the selection and replaces the whole list.
+- [cwatis-stored-procedures-not-in-repo](SolvedProblems/micros-libraries/cwatis-stored-procedures-not-in-repo.md) — procedures live only in the DB; ask for the exact `schema.procedure_name`, don't guess.
+- [callproceduredt-unknown-params-silently-dropped](SolvedProblems/micros-libraries/callproceduredt-unknown-params-silently-dropped.md) — a dict key the proc doesn't declare is silently ignored; add the `IN` param on the DB too.
+- [unisaver-schema-must-be-physical-not-procedure-namespace](SolvedProblems/micros-libraries/unisaver-schema-must-be-physical-not-procedure-namespace.md) — `global_db.UniSaver` needs the table's real schema (verify per table); wrong one = MySQL syntax error.
+- [deletelines-dbtabexclude-silently-ignored-and-fk-block-is-silent](SolvedProblems/micros-libraries/deletelines-dbtabexclude-silently-ignored-and-fk-block-is-silent.md) — `CallService.DeleteLines` ignores the exclude arg server-side and FK-blocked ids are skipped with no error.
+- [subdivfinances-callservice-and-refers-are-external](SolvedProblems/micros-libraries/subdivfinances-callservice-and-refers-are-external.md) — `CallService.cs` in SubdivFinances is dead code; `Refers.*` come from the `Refers.V2` package, not the empty submodule.
+- [ourorgsform-new-outid-is-oursubid](SolvedProblems/micros-libraries/ourorgsform-new-outid-is-oursubid.md) — `OurOrgsForm_New.OutId` is `m_oursubject.OurSubId`, not the `m_subject` id; convert via `refers.m_oursubject`.
+- [msubjectdatavirtualizingform-type-filter-and-profile](SolvedProblems/micros-libraries/msubjectdatavirtualizingform-type-filter-and-profile.md) — forcing the "Тип" filter overwrites the user's saved choice; pass `(Profile.IKeysValueManager)null`.
+- [globalforms-categorizedsubdivisionsform-not-a-picker](SolvedProblems/micros-libraries/globalforms-categorizedsubdivisionsform-not-a-picker.md) — `CategorizedSubdivisionsForm` picks only with `SelectMode = true`; otherwise use `MSubDivisionsForm { OnlyView = true }`.
+- [globalforms-smartgrid-missing-model-unwrap-helper](SolvedProblems/micros-libraries/globalforms-smartgrid-missing-model-unwrap-helper.md) — reading a bound row's model needs unwrapping `IDataCollectionBindingListItem.Item`; GlobalForms `GetModelRow<T>`.
+- [mc-globalforms-smartgrid-extension-method-collision](SolvedProblems/micros-libraries/mc-globalforms-smartgrid-extension-method-collision.md) — `CS0121` ambiguous `GetModelSelectedRow<T>` after a GlobalForms update; qualify the call with the class.
+
+### build-and-tooling
+- [subdivfinances-refersv2-mcglobalforms-version-mismatch](SolvedProblems/build-and-tooling/subdivfinances-refersv2-mcglobalforms-version-mismatch.md) — designer `FileNotFoundException` for MC_GlobalForms: must match the exact version `Refers.V2` was built against (read its nuspec).
+- [globalforms-refersv2-self-referential-mc-globalforms-package](SolvedProblems/build-and-tooling/globalforms-refersv2-self-referential-mc-globalforms-package.md) — installing `Refers.V2` into GlobalForms adds a package of itself → `CS0121` everywhere; remove that reference.
+- [system-valuetuple-reference-removed-on-nuget-upgrade](SolvedProblems/build-and-tooling/system-valuetuple-reference-removed-on-nuget-upgrade.md) — System.ValueTuple `FileNotFoundException` after a NuGet bump; restore the `HintPath` reference and `bindingRedirect`.
+- [gitlab-ci-nuget-restore-missing-internal-feed](SolvedProblems/build-and-tooling/gitlab-ci-nuget-restore-missing-internal-feed.md) — CI can't restore internal packages: no repo `NuGet.Config`; commit one with the `mars.micros.uz:9109` source.
+- [gitlab-ci-shallow-clone-breaks-commit-based-versioning](SolvedProblems/build-and-tooling/gitlab-ci-shallow-clone-breaks-commit-based-versioning.md) — wrong/decreasing computed versions in CI; set `GIT_DEPTH: 0` and fetch tags.
+- [git-bash-mangles-msbuild-slash-flags](SolvedProblems/build-and-tooling/git-bash-mangles-msbuild-slash-flags.md) — `MSB1008: only one project can be specified`: Git Bash rewrites `/flag` args, use PowerShell. Also the Bash tool collapses doubled backslashes even in quoted heredocs.
+- [github-readme-image-stale-raw-cdn-and-bom-corruption](SolvedProblems/build-and-tooling/github-readme-image-stale-raw-cdn-and-bom-corruption.md) — README image broken after a fix: BOM-corrupted PNG, then a stale raw CDN object; wait and re-probe.
+
+### mysql
+- [mysql-in-param-mistaken-for-output](SolvedProblems/mysql/mysql-in-param-mistaken-for-output.md) — `SELECT … INTO _param` on an `IN` param never reaches the caller; make it `INOUT`.
+- [find-in-set-json-array-drops-first-last-element](SolvedProblems/mysql/find-in-set-json-array-drops-first-last-element.md) — `FIND_IN_SET` fed `"[1,2,3]"` misses the first and last id; pass `string.Join(",", ids)`.
+- [pomelo-mysql-ignores-totable-schema](SolvedProblems/mysql/pomelo-mysql-ignores-totable-schema.md) — `Table '<db>.<x>' doesn't exist`: Pomelo ignores the schema in `ToTable`; bridge with a view. Then `Unknown column 'id'` with snake-case naming.
+
+### windows-native
+- [tauri-window-center-work-area-vs-monitor-size](SolvedProblems/windows-native/tauri-window-center-work-area-vs-monitor-size.md) — vertical jump on resize: `center()` uses the work area, `monitor.size()` the full screen.
+- [composition-rounded-rect-round-only-some-corners](SolvedProblems/windows-native/composition-rounded-rect-round-only-some-corners.md) — round only some corners: oversize the rounded rect, `ShapeVisual` clips it.
+- [composition-animated-values-not-readable-from-app](SolvedProblems/windows-native/composition-animated-values-not-readable-from-app.md) — animated Composition values can't be read back; mirror the animation app-side.
+- [win32-overlay-httransparent-does-not-pass-clicks-cross-process](SolvedProblems/windows-native/win32-overlay-httransparent-does-not-pass-clicks-cross-process.md) — `HTTRANSPARENT` doesn't pass clicks to other processes; split render and hit-test windows.
+
+### web
+- [css-dark-mode-media-query-not-gated-by-forced-theme](SolvedProblems/web/css-dark-mode-media-query-not-gated-by-forced-theme.md) — near-invisible headings with OS-dark + app-forced-light; declare `color` on the component class.
+- [oxlint-react-refs-taints-whole-object-property](SolvedProblems/web/oxlint-react-refs-taints-whole-object-property.md) — oxlint `react(refs)` flags every property once one is a `ref`; destructure the ref.
+- [outline-postgres-sslmode-required](SolvedProblems/web/outline-postgres-sslmode-required.md) — self-hosted Outline SSL error against plain Postgres; `PGSSLMODE=disable`.
+- [outline-self-hosted-first-team-requires-oauth-oidc](SolvedProblems/web/outline-self-hosted-first-team-requires-oauth-oidc.md) — `providers: []` on a fresh Outline: the first team needs OAuth/OIDC (use dex locally).

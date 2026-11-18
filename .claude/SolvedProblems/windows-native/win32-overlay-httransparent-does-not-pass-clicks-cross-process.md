@@ -1,0 +1,19 @@
+# Win32 overlay: returning HTTRANSPARENT from WM_NCHITTEST does not pass clicks through to other apps
+
+**Symptom:** A borderless topmost overlay window (here a Windows.UI.Composition-rendered `WS_EX_NOREDIRECTIONBITMAP` popup) returns `HTTRANSPARENT` from `WM_NCHITTEST` for its empty/transparent area, expecting clicks there to reach whatever is underneath. Instead, clicks on the empty area are simply swallowed: nothing underneath reacts, the cursor doesn't change to the underlying app's, and the user reports "I can't click next to the island". No error anywhere - the code looks like the textbook click-through pattern.
+
+**Root cause:** `HTTRANSPARENT` only forwards the hit test to other windows **of the same thread** (the documented behavior: "the message will be sent to underlying windows in the same thread until one of them returns a code that is not HTTRANSPARENT"). For a top-level overlay sitting over other processes' windows there is no same-thread window beneath, so the system stops there and the click goes nowhere. It is a child-window/owner-drawn-control mechanism, not a cross-process click-through mechanism. Confirmed 2026-09-21: `WindowFromPoint` over the "transparent" area still returned the overlay's own HWND, and a probe window from another process placed underneath never received the click.
+
+**Fix:** Section-9.1-style two windows, per the Dynamic Island requirements doc:
+- **Render layer:** `WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, `WS_POPUP`, sized once to the maximum footprint and never resized. `WS_EX_LAYERED | WS_EX_TRANSPARENT` is the one combination that removes a window from hit-testing system-wide ("mouse events will be passed to other windows underneath the layered window"). Verified: with `WS_EX_NOREDIRECTIONBITMAP` the Composition `DesktopWindowTarget` content renders fine on such a window **without** any `SetLayeredWindowAttributes`/`UpdateLayeredWindow` call; `WindowFromPoint` over its empty area returns the window beneath (another process), and a real injected click reached a probe window from another process placed under it.
+- **Interaction layer:** a second `WS_POPUP` with `WS_EX_NOREDIRECTIONBITMAP | WS_EX_TOPMOST | WS_EX_TOOLWINDOW`, **no** layered/transparent bits, no composition target at all. It draws nothing (no redirection surface, nothing composed) yet is hit-tested by its plain rectangle, so keep that rectangle equal to the visible shape via `SetWindowPos(... SWP_NOZORDER | SWP_NOACTIVATE)`; it's cheap to move/resize because there's nothing to render. All input handling (`WM_LBUTTONDOWN`/`UP`, `SetCapture`, `WM_ACTIVATE`-based dismiss, `WM_KEYDOWN`) lives on this window; the render layer's class can use `DefWindowProcW` directly.
+
+Precedent: `D:\projects\p\cup-island\prototype\main.cpp` (`main()` window creation, `SnapInteractionLayer`).
+
+**Checklist / rule:**
+- `HTTRANSPARENT` = same-thread only. For an overlay over other apps, don't reach for `WM_NCHITTEST` at all; use `WS_EX_LAYERED | WS_EX_TRANSPARENT` on the drawing window and a separate plain window for the clickable region.
+- Don't make the interaction window layered with alpha 1 to "hide" it - a `WS_EX_NOREDIRECTIONBITMAP` popup with no composition target is already invisible and hit-testable by rect.
+- Test click-through **cross-process**: `WindowFromPoint` at a point over the empty area must return a foreign HWND, and a probe window in another process must actually receive `WM_LBUTTONDOWN`. Same-process tests pass for the wrong reasons.
+- When the interaction window tracks an animated shape, see [[composition-animated-values-not-readable-from-app]] - the compositor won't tell you where the shape currently is.
+
+Found in cup-island 2026-09-21 (Win32 + Windows.UI.Composition dynamic-island prototype).

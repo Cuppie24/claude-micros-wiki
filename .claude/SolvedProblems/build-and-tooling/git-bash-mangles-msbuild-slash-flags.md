@@ -28,3 +28,32 @@ If Bash must be used for some reason, set `MSYS_NO_PATHCONV=1` (or `MSYS2_ARG_CO
 - Separately: don't assume a documented build command's binary path (e.g. a CLAUDE.md-documented `...\2022\Community\...` MSBuild path) is still accurate — VS installs get upgraded (e.g. to `...\18\Community\...`) and the old path silently becomes "No such file or directory". Locate the real path (`find`/`Get-ChildItem` for `MSBuild.exe`) if the documented one 404s, rather than assuming the tool is missing.
 
 Found in: MC_GlobalForms (globalforms) repo, 2026-08-14, while verifying a build after a schema-driven code cleanup (removing dead `MCode` field references from the `MSubDivisions` module).
+
+## Gotcha: the Bash tool collapses a doubled backslash to a single one, even inside a quoted heredoc
+
+**Symptom** (CWATIS, 2026-10-21): a Python script fed through the Bash tool as `python - <<'PYEOF' ... PYEOF` (quoted delimiter, so bash itself
+must not touch the body) behaved as if every doubled backslash (two backslash characters) had become one:
+
+- a bytes literal written with doubled backslashes as a Windows path separator (`Features` + 2 backslashes + `Warehouse`) ->
+  `SyntaxWarning: invalid escape sequence '\W'`, and the byte-string anchor never matched (`AssertionError`);
+- a regex whose character class excluded a backslash (written as 2 backslashes inside `[^"...]`) ->
+  `re.error: unterminated character set at position 5`;
+- `split()` on backslash + backslash + `t` (meant: the two characters backslash, `t` of a C# string literal) split on a real TAB instead.
+- Writing this very note through the Bash tool mangled it the same way (the heading came out as "collapses `\` to `\`"); fixed with the Edit tool.
+
+The errors all point at Python syntax/regex, not at the shell, so the first instinct is to debug the Python.
+
+**Root cause**: the tool layer between the model and Git Bash unescapes a doubled backslash to a single one in the command text before
+bash runs it; the quoted heredoc does not protect against that (verified three times in one session, all in heredoc bodies).
+Describing backslashes in prose ("2 backslashes") here is deliberate, so this file survives being re-written through a shell.
+
+**Fix / rule**: never rely on a literal backslash inside a script passed through the Bash tool. Build it at runtime instead:
+
+```python
+BS = chr(92)            # one backslash
+TAB_ESC = BS + "t"      # the two characters  \ t  as written inside C# string literals
+path = b"Features/Warehouse/X.cs".replace(b"/", bytes([92]))   # csproj-style Windows path
+```
+
+Or write the script to a file with the Write tool and run that file. Regex character classes that need a backslash: use `chr(92)`
+via string concatenation, or avoid the class (e.g. scan for quote characters manually).

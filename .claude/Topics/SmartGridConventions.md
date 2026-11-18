@@ -1,6 +1,6 @@
 # SmartGrid Conventions (CWATIS)
 
-Conventions for working with `MicrosSmartGrid.SmartGrid` (and `TreeFlexGrid`) in the CWATIS WinForms client. See also `SmartGridExtentions.cs` (`CWATIS\Extentions\SmartGridExtentions.cs`) for the extension methods referenced below, and the project's `SmartGridWiki.md` for general grid feature documentation (headers, context menu, tooltips, tree building, etc. — legacy/English, do not extend it; the active wiki is the `CwatisWiki` vault).
+Conventions for working with `MicrosSmartGrid.SmartGrid` (and `TreeFlexGrid`) in the CWATIS WinForms client. See also `SmartGridExtentions.cs` (`CWATIS\Extentions\SmartGridExtentions.cs`) for the extension methods referenced below, and the project's `SmartGridReference.md` for general grid feature documentation (headers, context menu, tooltips, tree building, etc. — legacy/English, do not extend it; the active wiki is the `CwatisWiki` vault).
 
 ## Setting `DataSource`
 
@@ -17,6 +17,18 @@ masterGrid.EndUpdate();
 Precedent: `ContractDSForm.cs`, `PriceEditPanel.cs`, `CompletedWorksForm.cs`, `WareHouseCardForm.cs`, among others.
 
 ## CRUD Without a Full Refresh: Editing `C1DataCollectionBindingList` Directly
+
+### Rule: a single-row save patches the bound list — no re-fetch
+
+This is **the standard way** to show a saved row in **every** WinForms form and grid, not something you opt into. When the user saves (creates, edits or deletes) **one row**, and the save logic changes nothing except that row, the view puts the client-side model into the live `C1DataCollectionBindingList` (Update: `RemoveAt` + `Insert`, see below). Don't make a second DB call to re-read the row or the list, don't call the form's `OnRefresh`/`LoadXAsync`, and don't reassign `DataSource`.
+
+- **Wrong:** `await _repository.SaveAsync(model); await LoadDocumentsAsync();` — a full re-list just to show one row the client already has. It costs a server round trip, rebinds the grid, can lose the selection and scroll position, and fires selection events again.
+- **Wrong:** writing the new values cell by cell (`grid[row, "Col"] = model.Col` for each column, as the older `CompletedWorksForm.UpdateDetailRow` does). The bound item stays stale, so the next sort, `GetModelRow<T>` or client-side filter shows the old values, and every new column needs another line.
+- **Right:** the presenter saves, and only after success calls `_view.UpdateXRow(model)`. The view finds the item's index in the binding list (unwrapping `IDataCollectionBindingListItem`), calls `RemoveAt` + `Insert` at that index, and selects the row again.
+
+**When a real re-fetch IS required** (refresh the affected data instead of patching): the save has server-side side effects that the client can't reproduce. Examples: a procedure or trigger that recalculates totals, statuses or amounts on this row or on other rows, a header whose total depends on its lines, a renumbering, or a cascade into other rows or other grids. Also re-fetch when the grid shows server-derived display columns (joined names, computed fields) that the model you have doesn't fill and you can't fill cheaply on the client. Fill a joined name from data the form already holds (e.g. the `_warehouses` list a combo is bound to) when you can — that still needs no DB call. Re-fetch only when you really can't.
+
+Precedents: `SubdivisionsForm.cs` (`InsertRow`/`SetLocalId`/`RemoveRow`), `WhMovementControl.UpdateDocumentRow` (Warehouse → Movement; saving a document header).
 
 `C1DataCollectionBindingList` implements `System.Collections.IList` and `System.ComponentModel.IBindingList` directly (confirmed via reflection against `C1.DataCollection.BindingList.dll`, package `C1.DataCollection.BindingList` v1.0.20223.121) — `Insert(int, object)`, `Add(object)`, `RemoveAt(int)`, and the `this[int]` indexer **getter** all exist, work, and raise `ListChanged`, which the grid is already subscribed to. **The indexer *setter* is a different story — it's an unimplemented stub, see the Update section's gotcha below; reflection only proves a member's signature exists, not that its body does anything.** That means a create, update, or delete doesn't need a full re-fetch + `DataSource` reassignment (the "Setting `DataSource`" pattern above) — editing the already-bound list in place is enough, and is cheaper (no server round trip to re-list, no `BeginUpdate`/`EndUpdate` rebind, selection is never lost).
 
@@ -106,7 +118,7 @@ Forms that re-filter client-side (a cached `_allX` list, re-sliced into a new `C
 
 ### Where the "updated object" comes from
 
-Sometimes the backend call already returns enough to build it client-side (a create dialog already collected `Code`/`Name`; the new id is the only unknown, and the insert procedure returns it — just merge). Sometimes only *part* of the row changed and the new value is already known deterministically without asking the backend anything at all (e.g. "remove from local" always means "this FK becomes null" — no round trip needed to learn that). Don't guess a stored procedure's result-set shape to avoid an extra call — see `SolvedProblems/cwatis-stored-procedures-not-in-repo.md` (procedures aren't in the repo and can't be checked by reading code); confirm the actual column name with whoever owns the DB first.
+Sometimes the backend call already returns enough to build it client-side (a create dialog already collected `Code`/`Name`; the new id is the only unknown, and the insert procedure returns it — just merge). Sometimes only *part* of the row changed and the new value is already known deterministically without asking the backend anything at all (e.g. "remove from local" always means "this FK becomes null" — no round trip needed to learn that). Don't guess a stored procedure's result-set shape to avoid an extra call — see `../SolvedProblems/micros-libraries/cwatis-stored-procedures-not-in-repo.md` (procedures aren't in the repo and can't be checked by reading code); confirm the actual column name with whoever owns the DB first.
 
 Precedent: `SubdivisionsForm.cs` (`InsertRow` for `createCommand`/`OnAdd`; `SetLocalId` for `addToLocalCommand`/`removeFromLocalCommand` — the latter is a partial-field update, not a full-row edit, hence the narrower `SetLocalId(globalId, localId)` view method instead of a whole-row `UpdateRow`; `RemoveRow` for `deleteCommand`/`OnDelete`).
 
@@ -128,12 +140,48 @@ grid.AddItemToContextMenu("Информация о записи", Resources.Info
 
 `Main.RecInfoView(int id, string tableName)` lives in `CWATIS\HelperClasses\Main.cs`. The `tableName` string matches the underlying MySQL table (e.g. `"contracttypes"`, `"contracts"`, `"contractlines"`, `"pricelistrows"`).
 
+**Tables outside `cwatis`:** the two-argument overload always opens the `cwatis` log (`log_db.rec_info_cwatis`). Each schema's
+`add_rec_info` writes to its own log table, and `global_db.add_rec_info` writes to **`log_db.rec_info_refers`** (not
+`rec_info_global`, which stays empty — verified on mars 2026-11-10). For a `global_db` table call
+`Main.RecInfoView(id, table, "")`: an empty `MainDBName` makes `RecInfoForm` open the refers log. Passing `"refers"` explicitly
+works too, but adds a second item with the same code to the form's database list. The log only shows something if the
+procedures that write the table call `add_rec_info`; `CallService.DeleteLines` and plain table writes don't.
+
+**Footer rows:** check that the current row is a data row before reading the model — reading a model on a footer row throws
+(see the footer gotcha below). Warehouse precedent that does both: `Features/Warehouse/Shared/View/WhRecordInfo.Attach(grid,
+schema, table, getCurrentId)` (2026-11-10).
+
 ### Getting the id
 
 - If the grid has a real bound column for the key (e.g. `"ContractId"`, `"ActId"`, `"PreContrId"`), index the grid directly: `(int)grid[grid.Row, "ColumnName"]`.
 - If the grid has **no bound id column** (`AutoGenerateColumns=false` and the id property isn't in `ColumnInfo`, or `IdName` is `null`), do **not** guess a column name (e.g. `"Id"`) — indexing by a name that isn't in `ColumnInfo` throws. Instead extract the id from the row's bound DTO:
   - Whole-model extraction: `grid.GetModelSelectedRow<TDto>()`, then read `.YourIdProperty`. Guard against a blank/default model when no row is selected (e.g. `selected == null || selected.YourIdProperty == 0`).
   - Or a direct cast when only the id is needed: `(grid.Rows[grid.Row].DataSource as TDto)?.YourIdProperty` (precedent: `TemplDocsViewForm.cs`).
+
+## Empty Grid Before the First Load: Collapse to Fixed Rows
+
+A grid dropped in the designer is saved with a placeholder row count (`Rows.Count = 51`, etc.). On form open the user would see ~50 empty rows flash for the moment between the form appearing and the async fetch finishing, and then the real 3 rows replace them (visible flicker).
+
+**Rule:** on form load, before the first data fetch, collapse every grid to its fixed rows (plus fixed footer rows, if any). Do it right after `InitializeComponent()` in the form constructor — it only touches `Rows`, so it is safe there (unlike `Cols[...]` access, see `../SolvedProblems/winforms/winforms-child-control-setup-constructor-vs-load.md`):
+
+```csharp
+public MyForm()
+{
+    InitializeComponent();
+    ClearGrid(masterGrid);
+    ClearGrid(detailGrid);
+    ...
+}
+
+private static void ClearGrid(SmartGrid grid)
+{
+    grid.Rows.Count = grid.Rows.Fixed + grid.Footers.Descriptions.Count;
+}
+```
+
+`Footers.Descriptions.Count` is the number of footer rows (0 when the grid has none); leaving it out would delete the footer row. Binding data later through `DataSource = new C1DataCollectionBindingList(...)` resets the row count anyway, so nothing else needs to change.
+
+Precedent: `Forms/WhInventory/View/WhInventoryActsForm.cs` (`ClearGrid`).
 
 ## Restoring the Selected Row After a Refresh
 
@@ -159,6 +207,12 @@ Capture the key from the bound model *before* the refresh (same "Getting the id"
 
 Precedent: `BkCntrSelectForm.cs` (`RaiseSearch` restoring the selection by `ContrId`; `SelectLinkedRow` uses the same `FindModel` call with a different predicate, for jumping to the row linked to the current CWATIS contract rather than restoring a prior user selection).
 
+**GlobalForms note:** GlobalForms' own `SmartGrid_Extentions.cs` doesn't have a `FindModel` counterpart yet (only `GetModelRow`/`GetModelSelectedRow` - see the `../SolvedProblems/micros-libraries/globalforms-smartgrid-missing-model-unwrap-helper.md` gotcha). For a single call site there, a plain inline `_allData.FindIndex(x => x.Id == focusedId)` + `grid.Row = grid.Rows.Fixed + index` is fine - the "don't hand-roll the scan loop" warning above is about not reimplementing a helper that already exists *in the same codebase*; it just doesn't exist to reuse yet in GlobalForms. Port `FindModel` over only once a second call site actually needs it.
+
+**Gotcha: `BeginUpdate()`/`EndUpdate()` around a `DataSource` reassignment does NOT by itself preserve the focused row.** They only suspend repaint/layout while the new `C1DataCollectionBindingList` is swapped in - `grid.Row` still resets (typically to the first data row) once a brand-new `DataSource` is assigned, Begin/EndUpdate or not. Confirmed in GlobalForms: `SubdivisionCategoriesForm.RebindGrid` already wrapped its `DataSource = new C1DataCollectionBindingList(...)` in `BeginUpdate()/EndUpdate()` from day one (for the usual flicker/perf reason), yet the focused row still jumped to the first row on every refresh, because nothing ever restored `grid.Row` afterward. Fixed with this section's main technique: capture the focused row's id *before* the rebind, then relocate and restore `grid.Row` *after* `EndUpdate()`. Begin/EndUpdate and the id-based restore are two independent, both-needed pieces, not alternatives to each other.
+
+Found in GlobalForms, 2026-08-26, in `SubdivisionCategoriesForm.RebindGrid` (shared by the create/delete/refresh and revert-on-invalid-edit paths for the subdivision-categories grid) and, once known to look for it, the same pre-existing pattern in the sibling `CategorizedSubdivisionsForm.ApplyTypeFilter` - there the previous code unconditionally forced `grid.Row = grid.Rows.Fixed` after every rebind (add/delete/approve **and** an actual category-filter change), so approving/unapproving a row always bounced focus to the top. Fixed the same way, with one addition needed there specifically: since `ApplyTypeFilter` is also the handler for a genuine filter-category change (where the previously-focused row usually won't exist in the new filtered set at all), the id-restore has to fall back to the first row when the id isn't found, rather than assuming it's always present like the simpler `RebindGrid` case.
+
 ## Handling Double-Click on a Specific Column
 
 To react to a double-click on one particular column (not the whole row), wire `MouseDoubleClick`, not the plain `DoubleClick` event. `MouseDoubleClick` carries `MouseEventArgs` (`e.X`/`e.Y`), so the clicked cell can be resolved directly with `grid.HitTest(e.X, e.Y)` in the same handler — no need for a separate `MouseDown` handler to stash the hit-tested column first (that older pattern exists in `ContractsSubTypeForm.cs`'s `_detailGrid_MouseDown` + `_detailGrid_DoubleClick`; prefer `MouseDoubleClick` for new code).
@@ -183,7 +237,7 @@ Precedent: `ContractTypesForm.cs` (`masterGrid_MouseDoubleClick`, opens `JSONVIe
 
 The established idiom for attaching an image to a grid cell is imperative, not declarative: call the native `SetCellImage(row, col, image)` method, or set `e.Image` inside the grid's `OwnerDrawCell` handler, then clear the text with `e.Text = string.Empty`. A declarative `Column.DataType = typeof(Image)` approach was tried once (`TemplDocsViewForm.cs`, now commented out) and abandoned in favor of this.
 
-**Standing rule: every cell image must be center-aligned and scaled to fit the cell.** Set the column's `ImageAlign` to `C1.Win.C1FlexGrid.ImageAlignEnum.Scale` once at grid setup (constructor, right after `InitializeComponent()` — `Cols["Name"]` only resolves once `ColumnInfo` has been parsed, which happens as part of `InitializeComponent()`). `Scale` both centers the image and resizes it to fit the cell's current bounds while preserving aspect ratio (confirmed against the local `C1.Win.C1FlexGrid.4.8.xml` doc: "Image is scaled to fit the maximum area within the cell while preserving the original aspect ratio" — `ImageAlignEnum` is a plain enum, not flags, so there is no separate "center" setting to combine with it; `Scale` already implies centered). Use `ImageAlignEnum.Stretch` only if aspect-ratio distortion is acceptable — normally it isn't.
+**Standing rule: every cell image must be center-aligned and scaled to fit the cell.** Set the column's `ImageAlign` to `C1.Win.C1FlexGrid.ImageAlignEnum.Scale` once at grid setup (constructor, right after `InitializeComponent()` — `Cols["Name"]` only resolves once `ColumnInfo` has been parsed, which happens as part of `InitializeComponent()`). `Scale` both centers the image and resizes it to fit the cell's current bounds while preserving aspect ratio (confirmed against the local `C1.Win.C1FlexGrid.4.8.xml` doc: "Image is scaled to fit the maximum area within the cell while preserving the original aspect ratio" — `ImageAlignEnum` is a plain enum, not flags, so there is no separate "center" setting to combine with it; `Scale` already implies centered). Use `ImageAlignEnum.Stretch` only if aspect-ratio distortion is acceptable — normally it isn't. When the image must have a **specific pixel size** rather than "as big as the cell", `Scale` is the wrong tool — see "Pattern — exact pixel size, centered" below.
 
 ```csharp
 public SomeForm()
@@ -211,6 +265,63 @@ private void grid_OwnerDrawCell(object sender, C1.Win.C1FlexGrid.OwnerDrawCellEv
 ```
 
 Older precedent (`TemplDocsViewForm.cs`, `ContractsForm.cs`, `ContractsSubTypeForm.cs`, `ProductMoveRepListForm.cs`, `UserRightsForm.cs`) draws these at natural size without setting `ImageAlign` — that predates the standing rule above; don't copy that part when adding new icon columns, only the `OwnerDrawCell` wiring.
+
+### Pattern — exact pixel size, centered (e.g. "always 16×16 in the middle of the cell")
+
+`ImageAlign` has **no size setting**. `Scale` sizes the image *to the cell* (a 16px icon in a 40px-tall row becomes 40px; in a short row it shrinks), and every positional value (`CenterCenter`, `LeftCenter`, …) draws the image at its **natural pixel size**, clipped if it's bigger than the cell. So "a specific size" = control the bitmap's size yourself, then let `CenterCenter` center it. Two ways:
+
+**A (preferred) — resize the bitmap once, align with `CenterCenter`.** Build the sized bitmap once and cache it in a static field (never inside `OwnerDrawCell`, which fires on every repaint and during autosize):
+
+```csharp
+// grid setup (Load, or right after InitializeComponent()) — or in the Designer column Style string: "ImageAlign:CenterCenter;"
+grid.Cols["HasPCDiff"].ImageAlign = C1.Win.C1FlexGrid.ImageAlignEnum.CenterCenter;
+
+private static Image _diffIcon16;
+private static Image DiffIcon16 => _diffIcon16 ?? (_diffIcon16 = Resize(Properties.Resources.check7, 16, 16));
+
+private static Image Resize(Image src, int w, int h)
+{
+    var bmp = new Bitmap(w, h);
+    using (var g = Graphics.FromImage(bmp))
+    {
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        g.DrawImage(src, new Rectangle(0, 0, w, h));
+    }
+    return bmp;
+}
+
+private void grid_OwnerDrawCell(object sender, OwnerDrawCellEventArgs e)
+{
+    if (e.Row < grid.Rows.Fixed) return;
+    if (e.Col == grid.Cols["HasPCDiff"]?.Index)
+    {
+        e.Text = string.Empty;
+        e.Image = flag ? DiffIcon16 : null;
+    }
+}
+```
+
+The bitmap must keep the target size even if the row/column is later made larger — that's the point; with `Scale` it wouldn't. Make sure the row is at least as tall as the icon (+ a couple of px), otherwise `CenterCenter` clips it.
+
+**B — draw it yourself** (when the size must depend on the cell, e.g. "16px but never more than row height − 4"). Let the grid paint background + border (selection/alternating colors stay correct), then draw the image into a centered rect:
+
+```csharp
+if (e.Col == grid.Cols["HasPCDiff"]?.Index && flag)
+{
+    e.Text = string.Empty;
+    e.Image = null;
+    e.DrawCell(DrawCellFlags.Background | DrawCellFlags.Border); // also sets e.Handled = true
+    int size = Math.Min(16, e.Bounds.Height - 4);
+    var r = new Rectangle(e.Bounds.X + (e.Bounds.Width - size) / 2,
+                          e.Bounds.Y + (e.Bounds.Height - size) / 2, size, size);
+    e.Graphics.DrawImage(DiffIcon, r);
+}
+```
+
+Skip `DrawCellFlags.Content` (that would draw the text/natural-size image too). `DrawCell(...)` sets `e.Handled = true` itself (confirmed in the local `C1.Win.C1FlexGrid.4.8.xml`), so the grid won't repaint over your image. If you only modify `e.Style`/`e.Text`/`e.Image` and don't call `DrawCell`, don't set `Handled` — the grid paints normally.
+
+Precedent for `ImageAlign:CenterCenter` set via the Designer column style: `OrderTabControl.resx` (`HasPC`/`HasPL` columns). Precedent for a cached icon property: `GridOwnerDraw.DiffIcon` in `CalcImportPrices\View\SubVIew\GridEditHelpers.cs` (natural size, no resize). API members verified against the local `C1.Win.C1FlexGrid.4.8.xml` (`4.8.20231.596`) on 2026-10-19 — not yet exercised in a running form.
 
 ### Pattern — resizable image (photo/scan/attachment)
 
@@ -374,6 +485,33 @@ private async void grid_AfterEdit(object sender, C1.Win.C1FlexGrid.RowColEventAr
 
 Precedent: `userpermissionsui/RolesManagerForm.cs` (`RolesGrid_StartEdit`/`RolesGrid_AfterEdit`, and `RoleRightsGrid`'s `_roleRightsGrid_OnStartEdit`/`_roleRightsGrid_OnAfterEdit`). **Correction:** an earlier version of this doc also cited `ContractTypesForm.cs` here as a `StartEdit`/`AfterEdit` example — its actual current code (`masterGrid_BeforeEdit`/`masterGrid_AfterEdit`) uses `BeforeEdit`, not `StartEdit` (confirmed by reading the file directly, 2026-08-18). Whether that's a deliberate choice or drift from this doc's own recommendation above is unknown - don't cite it as `StartEdit` precedent without re-checking the file.
 
+### `ValidateEdit`: checking the just-typed value and aborting/reverting before it commits
+
+None of the three events above can validate *the value the user just typed* before it lands in the model: `StartEdit`/`BeforeEdit` fire before typing starts (only the old value exists yet), and `AfterEdit` fires only once the new value is already committed to the cell and the bound model — too late to abort without a manual revert. For "check what was just typed, reject it if invalid," use **`ValidateEdit`** (`C1.Win.C1FlexGrid.ValidateEditEventArgs`) instead. Per the local `C1.Win.C1FlexGrid.4.8.xml` doc, it "fires before the control exits cell edit mode, while the editor is still active" — the new value hasn't been applied to the grid or model yet, so rejecting here needs no manual revert.
+
+Read the not-yet-committed value from **`grid.Editor.Text`** (the grid cell / bound model still hold the *old* value at this point — that's the whole reason this event exists, distinct from `AfterEdit`). Two ways to reject, both real precedent in this codebase:
+
+- **`e.Cancel = true`** — the editor stays open with the invalid text still showing; the user must correct it or press Esc to actually cancel. Precedent: `GoodsTree4PriceListForm.cs` (`_detailGrid_ValidateEdit`/`_masterGrid_ValidateEdit`, 0–100% range checks on percent columns), `PricingParametersEditForm.cs` (`_detailGrid_ValidateEdit`, same range-check pattern), `TgMembersForm.cs` (`membersGrid_ValidateEdit`, `PhoneCw` column).
+- **`e.Cancel = true` plus `grid.FinishEditing(true)`** — forces the grid out of edit mode immediately *and* restores the original value in the same call. Confirmed in the XML doc: `FinishEditing(true)` "the original cell value is restored and the grid is guaranteed to leave the edit mode" (the parameterless overload / `FinishEditing(false)` instead tries to apply the edit and re-fires `ValidateEdit`/`LeaveEdit`/`AfterEdit` as usual, staying in edit mode if validation fails). Use this when the invalid entry shouldn't keep sitting in the editor waiting for the user to notice it. Precedent: `TgMembersForm.cs` (`membersGrid_ValidateEdit`, `CompanyUrlCw` column).
+
+```csharp
+private void grid_ValidateEdit(object sender, C1.Win.C1FlexGrid.ValidateEditEventArgs e)
+{
+    if (e.Row < grid.Rows.Fixed || e.Col != grid.Cols["SomeColumn"]?.Index) return;
+
+    if (!double.TryParse(grid.Editor.Text, out var value) || value < 0 || value >= 100)
+    {
+        MyMessageBox.Show("Редактирование", "Значение должно быть в пределах от 0 до 100.", "Warning");
+        e.Cancel = true;
+        // grid.FinishEditing(true); // add this line to also force an immediate revert instead of leaving the editor open for correction
+    }
+}
+```
+
+Wire it in Designer.cs like any other grid event: `this.grid.ValidateEdit += new C1.Win.C1FlexGrid.ValidateEditEventHandler(this.grid_ValidateEdit);`.
+
+**If the check itself needs an async/server round trip** (e.g. a uniqueness check against the DB), `ValidateEdit` can't await one — the editor can't be held open across an `async` gap. In that case let the edit commit, validate in `AfterEdit`, and revert manually if it turns out invalid (restore the previous value onto the row/model yourself — there is no framework-level "undo commit" once `AfterEdit` has fired). No CWATIS precedent for this half exists in this codebase yet; capture the pre-edit value in `StartEdit` if this path needs it later.
+
 **Resolved — the `Cols[e.Col].Name` theory below was a dead end; see the `Footers`/aggregate gotcha further down instead.** A `SubdivisionsForm` implementation hit a real, repeatable `ArgumentOutOfRangeException` immediately after every committed cell edit. Three rounds of fixes targeting this form's own event handlers — guarding `e.Row`, then also guarding `e.Col` around `Cols[e.Col]`, then rewriting to avoid `Cols[e.Col]` entirely (switching `StartEdit`→`BeforeEdit` and comparing `e.Col` against `Cols["Name"]?.Index` instead, matching `ContractTypesForm`) — **produced the identical error every time.** A captured stack trace (via a temporary second `Application.ThreadException`/`AppDomain.UnhandledException` subscriber logging `ex.ToString()`, since the app's real handler's `CatchHelper` lives in an external package with no source in this repo) proved why: the throw was entirely inside `C1.Win.C1FlexGrid.C1FlexGridBase.DrawRow` → `RowCollection.get_Item` → `ArrayList.get_Item`, reached via a native `WM_PAINT` → `OnPaint`. **Nothing from the form's own C# code appears anywhere in that stack** — no amount of fixing `SubdivisionsForm`'s handlers could ever have helped, since the crash was never in them. The `Cols[e.Col].Name`-avoidance and `BeforeEdit` changes were kept anyway (harmless, and `BeforeEdit` does match the one other proven-working precedent in this codebase) but were not what fixed this.
 
 ## Gotcha: with a `Footers` aggregate present, committing an edit on the grid's *last* row makes `DrawRow` throw `ArgumentOutOfRangeException`
@@ -412,6 +550,13 @@ Two follow-up theories about *why*, both tested and **both failed to prevent the
 - **Native "move to next row after Enter" landing on the footer.** Theory: `Footers.Fixed = true` positions the footer immediately after the last data row, and C1FlexGrid's own post-commit row-advance tries to select it as if it were a normal row. Tested fix: set `smartGrid1.Row = e.Row` as the first line of `AfterEdit`, synchronously, before any `await` - to snap the selection back before any repaint could happen on the bad position. **Did not stop the crash.**
 - **`C1DataCollectionBindingList.RemoveAt` on the last row triggering the grid's own "pick a new current row" logic.** Theory (this codebase already does `RemoveAt`+`Insert` to replace a bound item in place - see the "Update" gotcha above - and separately does a plain `RemoveAt` for delete): `RemoveAt` fires `ListChanged`, and while the list is momentarily shorter, if the removed item was the currently-selected row, the grid needs to auto-pick a new current row - landing on the footer if that row was last. Tested fix: before every `RemoveAt` that might remove the current row, move `smartGrid1.Row` off it first (to the previous row), then restore it to the correct position afterward - applied to all three of this form's `RemoveAt` call sites (`SetLocalId`, `RemoveRow`, and `UpdateField`, which also covers `AfterEdit`'s revert-on-failure path since it's shared). **Did not stop the crash either.**
 
+**Recurrence 2026-11-16 (CWATIS invoices):** same stack after saving an invoice header that sits in the **last** row of `gridDocs`
+(footer with a `Count` on column 1) — the save replaces the row in place (`RemoveAt` + `Insert`), no cell edit involved. Workaround
+in CWATIS warehouse forms: `Features/Warehouse/Shared/View/WhGridLastRow.IsLast` — the view's in-place replace methods
+(`WhMovementControl.UpdateDocumentRow`, `WhStockGoodsForm.UpdateCards`, `WhGoodOwnersForm.ReplaceOwners`) return `false` without
+touching the list when a target is the last data row, and the presenter does a full reload instead. A hack, not a fix: the
+mechanism is still unknown, removals / appends and cell edits on the last row are not covered.
+
 Given two independently-plausible, directly-targeted mitigations both failed, the true mechanism is something else inside C1FlexGrid/`MicrosSmartGrid.V2` that wasn't identified. **Don't re-attempt either of the two theories above without new evidence (e.g. a debugger break-on-exception session, since the stack trace by itself wasn't enough to distinguish between them or find the real cause).**
 
 ### Fix
@@ -440,6 +585,16 @@ this.smartGrid1.Footers.Fixed = true;
 
 Found in CWATIS, 2026-08-18, while wiring inline grid-cell editing for `SubdivisionsForm` (`Code`/`Name` columns). Closed the same day after three failed mitigation attempts - footer removed, not fixed.
 
+### Update 2026-11-10: alternative fix that keeps the footer — full rebind instead of editing the bound list (user report, not yet verified)
+
+The user reports that the crash happens **only when the bound `C1DataCollectionBindingList` is modified** (`RemoveAt` + `Insert`
+"replace in place", `Add`, `RemoveAt`) after the edit — which is exactly what `SubdivisionsForm` did on save. Pattern built on that:
+keep the footer, let `AfterEdit` only save, then re-read the data and assign a **new** `C1DataCollectionBindingList` to `DataSource`
+(restore the selection by id). Never touch the bound list in place on an editable grid with a footer. Precedent:
+`CWATIS/Features/Warehouse/Warehouses/View/WhWarehousesForm.cs` (name column inline, "Всего:" footer on the № column). At the time of
+writing this was built and compiled but **not yet exercised in the app** — confirm by editing that form's last row before citing it
+as proof, and update this note with the result either way.
+
 ### Checkbox / Boolean columns (`Style:"DataType:System.Boolean;..."`)
 
 A column styled with `DataType:System.Boolean` renders a checkbox glyph and toggles on click, going through the exact same `StartEdit`/`AfterEdit` lifecycle as a text column — no special handling needed beyond the guard + persist pattern above (and the `GetModelRow<T>` gotcha, which applies here just as much as to any other column). `AllowEditing` at the column level (default `true` unless set otherwise) controls whether the checkbox responds to clicks at all; there's no need to set it to `False` and drive the checkbox by hand via `MouseDown`/`HitTest` — that was tried as a workaround while the real bug (the `DataSource`-casting gotcha above) was still unidentified, and turned out to be unnecessary once the actual defect was fixed.
@@ -450,7 +605,7 @@ Working precedent for a guarded checkbox column: `userpermissionsui/RolesManager
 
 C1FlexGrid's `HighLight` property defaults to `HighLightEnum.Always`, which paints the current row/cell with the `Highlight` style **even when the grid has no focus — including on the VS designer surface**. In CWATIS the shared `StyleInfo` defines `Highlight{BackColor:255, 255, 180;...}` (pale yellow), so a grid dropped on a form/UserControl shows a phantom yellow first data row in the designer.
 
-The same flag controls both surfaces (the designer host is just an unfocused grid), so a single value can't give "clean designer + always-visible runtime selection". **Fix is two-step**: serialize `WithFocus` in the Designer.cs, then restore `Always` at runtime in the constructor, guarded by the design-time flag (see `SolvedProblems/winforms-usercontrol-design-time-safety.md` for `_isDesignTime`):
+The same flag controls both surfaces (the designer host is just an unfocused grid), so a single value can't give "clean designer + always-visible runtime selection". **Fix is two-step**: serialize `WithFocus` in the Designer.cs, then restore `Always` at runtime in the constructor, guarded by the design-time flag (see `../SolvedProblems/winforms/winforms-usercontrol-design-time-safety.md` for `_isDesignTime`):
 
 ```csharp
 // Designer.cs — keeps the design surface clean:
@@ -467,3 +622,250 @@ Plain `WithFocus` alone is only correct when the unfocused-selection highlight i
 ## Gotcha: designer serializes `SelectedRows` state junk
 
 The VS designer serializes `SmartGrid.SelectedRows` into the Designer.cs (`this._grid.SelectedRows = ((List<int>)(resources.GetObject("_grid.SelectedRows")));`) with a binary blob in the `.resx` — this is captured *designer-session selection state*, not configuration. It pre-bakes a selection into every new instance. When found (typically after copying a grid between forms), delete both the Designer.cs line and the `<data name="_grid.SelectedRows" ...>` element in the `.resx`.
+
+## Gotcha: `SmartGrid.GetSelectedRows()` has no bounds check — throws if called after `DataSource` shrinks while an old multi-selection is still set
+
+**Confirmed against `SmartGrid`'s own source** (`Prototypes/SmartGrid/SmartGrid/SmartGrid.cs` — the prototype project the compiled `MicrosSmartGrid`/`MicrosSmartGrid.V2` package is built from; property/method names match exactly, only some C1 namespaces differ, e.g. `C1.Win.FlexGrid` there vs `C1.Win.C1FlexGrid` in the currently-referenced package version):
+
+```csharp
+public List<int> SelectedRows { get; set; }
+
+public List<Row> GetSelectedRows()
+{
+    List<Row> res = new List<Row>();
+    for (int i = 0; i < SelectedRows.Count; i++)
+    {
+        res.Add(Rows[SelectedRows[i]]);   // no bounds check against Rows.Count
+    }
+    return res;
+}
+```
+
+`GetSelectedRows()` is a thin wrapper over the `SelectedRows` property (a plain `List<int>` of row indices, populated by the grid's own Ctrl/Shift-click handling — separate from the native C1FlexGrid cell-range `Selection`). It does **not** validate that any index is still `< Rows.Count` before indexing `Rows[...]`. If `DataSource` is reassigned to a *shorter* list (e.g. `smartGrid1.DataSource = new C1DataCollectionBindingList(filtered)` inside a delete/mutate loop) while `SelectedRows` still holds indices sized for the pre-rebind row count, the next call to `GetSelectedRows()` — direct or indirect (e.g. from an `AfterSelChange` handler that fires as a side effect of the rebind) — throws a plain `ArgumentOutOfRangeException` ("Индекс за пределами диапазона...") straight out of `Rows[i]`, unrelated to any bounds-checking in caller code. `GetModelRow<T>`/`GetModelSelectedRow<T>` (`SmartGrid_Extentions.cs`) are **not** a safety net here — they guard their *own* `index` parameter correctly, but that's irrelevant when the exception is already thrown one call earlier, inside `GetSelectedRows()` itself, before any index ever reaches `GetModelRow`.
+
+**Concretely, this bites any "mass operate on selected rows" loop that mutates+rebinds the grid per-item**, e.g.:
+
+```csharp
+// selected captured via GetSelectedRows() BEFORE the loop starts - fine at this point
+var selected = GetSelectedModels();
+foreach (var model in selected)
+{
+    await OnDelete(model.Id);   // -> RemoveRow -> rebinds DataSource to a shorter list
+    // any subsequent DeleteSB.Enabled = HasTypes && HasDeletableSelection() (or similar helper
+    // that re-calls GetSelectedRows()) can now throw, once a stale selected index >= the new Rows.Count
+}
+```
+
+### Fix
+
+- Anywhere that recomputes enablement/state as a *side effect* of a programmatic `DataSource` rebind (a shared "reapply filter and rebind" method, called from `RemoveRow`/`InsertRow`/`DisplayGridData`), use a single-row, scalar check (`grid.Row`, always kept in-bounds by the grid itself on rebind — e.g. via `GetModelSelectedRow<T>()`) instead of anything touching `GetSelectedRows()`/`SelectedRows`.
+- Once a multi-selection has been read and is no longer needed (e.g. captured into a `toDelete`/`toChange` list before a batch loop), clear it explicitly — `grid.SelectedRows?.Clear();` — *before* starting the loop. This is the same thing `SmartGrid_Extentions.GetValues<T>()` already does right after consuming `SelectedRows` (`grid.SelectedRows.Clear();`), just applied proactively instead of after a single read.
+- Reserve `GetSelectedRows()`-based (multi-select-aware) checks for handlers that only ever fire from live, real user interaction (`AfterSelChange`) — never from a method that itself just reassigned `DataSource`.
+
+Found in GlobalForms, 2026-08-25, in `CategorizedSubdivisionsForm.DeleteSB_Click`'s mass-delete path, after a `HasDeletableSelection()` helper (checking `!m.IsApproved` across `GetSelectedRows()`) was wired into `ApplyTypeFilter` — called from `RemoveRow`, which runs once per row inside the mass-delete loop. Fixed by adding a scalar-only `CanDeleteFocusedRow()` for the rebind-triggered call sites and clearing `SelectedRows` before the loop in `DeleteSB_Click`; the same two-part fix applies to `approveCommand_Click`'s mass-approve loop.
+
+Two more confirmed facts about `SmartGrid`, from the same prototype source (`Prototypes/SmartGrid/SmartGrid/SmartGrid.cs`), both relevant to the gotcha above:
+
+- **`GetSelectedRows()` already falls back to the current row when `SelectedRows` is empty** — its full body is `for (...) res.Add(Rows[SelectedRows[i]]); if (res.Count == 0) res.Add(Rows[Row]); return res;`. So "is anything selected" already means "explicit multi-selection, or just the current row" without needing to ever add the current row to `SelectedRows` yourself.
+- **Membership in `SelectedRows` repaints a *shared*, not per-row, style object** — `SmartGrid`'s own `SelChange` handler does:
+  ```csharp
+  if (Row >= Rows.Fixed)
+  {
+      if (SelectedRows != null && SelectedRows.Contains(Row))
+      {
+          Styles.Highlight.ForeColor = Color.Red;
+          Styles.Focus.ForeColor = Color.Red;
+      }
+      else
+      {
+          Styles.Highlight.ForeColor = DefaultForeColor;
+          Styles.Focus.ForeColor = DefaultForeColor;
+      }
+  }
+  ```
+  `Styles.Highlight`/`Styles.Focus` are the grid's shared style objects (used for whichever row is currently highlighted/focused), not something scoped to one row. Whether the *current* row happens to also be `SelectedRows`-listed flips these between red and normal text for the whole grid — this is the native "Bookkeep-style" explicit multi-select marking (`Insert`/`Num *` keys), a different concept from "this is simply the current row." **Never add a row to `SelectedRows` just to make it *look* selected/focused** (e.g. "restore first-row selection after a refresh") — that pulls in this red-text multi-select styling as a side effect, which reads as a different, wrong selection mode to anyone used to the grid's normal highlight. Set `grid.Row` alone; native `HighLight=Always` plus the default `Highlight`/`Focus` styles already render a normal current-row highlight without touching `SelectedRows` at all.
+
+  Found in GlobalForms, 2026-08-25, in the same `CategorizedSubdivisionsForm.ApplyTypeFilter` — an initial fix for "first row should look selected after refresh" (regressed when the junk `SelectedRows` blob above was removed) added `smartGrid1.SelectedRows.Add(smartGrid1.Rows.Fixed)` alongside `smartGrid1.Row = smartGrid1.Rows.Fixed`, which made every refresh paint the first row's text red instead of the normal highlight color. Fixed by dropping the `SelectedRows` line entirely and keeping only the `.Row` assignment.
+
+## Gotcha: hand-editing a `ColumnInfo` resx string — the leading number is the live column count
+
+`AutoGenerateColumns=false` grids define their entire column set through one serialized string, written by the VS Designer and stored in the form's `.resx`:
+
+```csharp
+this.smartGrid1.ColumnInfo = resources.GetString("smartGrid1.ColumnInfo");
+```
+
+e.g. `<data name="smartGrid1.ColumnInfo"><value>3,0,0,0,0,-1,Columns:0{Width:30;Name:"RowNumber";...;}	1{...}	2{...}	</value></data>`. When adding/removing a column by hand (no Designer available to regenerate it), it's tempting to treat the leading `3,0,0,0,0,-1,` prefix as unrelated grid metadata (fixed-rows count, sort state, …) — especially misleading when two unrelated sibling forms both happen to have 3 columns and share that exact literal prefix, which looks like proof it's unrelated to column count.
+
+**It isn't.** The first number in that prefix is the total column count, and must stay in sync with the number of `N{...}` column blocks in `Columns:...`. Confirmed by comparing forms with different column counts in this same repo: `PlacesTreeForm` has 8 columns (indices 0-7), prefix `8,1,0,0,0,-1,`; `LocationTreeViewForm` has 12 columns (indices 0-11), prefix `12,1,0,0,0,-1,`.
+
+### Fix
+
+When hand-editing `ColumnInfo` to insert/remove a column:
+- Renumber every `N{...}` block's leading index sequentially (`0,1,2,...`) in the new column order.
+- Update the leading count number in the prefix to the new total column count.
+- Update the paired `Headers` array in the sibling `.Designer.cs` to match — it is a separate property and does not resync itself. Insert/remove the cell at the same column index in **every** header row (never retype the arrays from scratch — that destroys the merge layout); see "Multi-row headers" below for the format and the `Caption` rule.
+- Copy an existing sibling column's exact `{...}` block (font/`StyleFixed`/`AllowMerging`) for the new column instead of inventing formatting from scratch, and grep sibling forms for the same resource name to find a column-count-to-prefix-number precedent before trusting the edit.
+
+Found in GlobalForms, 2026-08-26, adding a "Код" column to `SubdivisionCategoriesForm` (inserted between the existing `IsApproved`/`Name` columns, copying the `Code` column block already present in the sibling `CategorizedSubdivisionsForm`).
+
+### Symptom when the count is too low: trailing columns silently vanish
+
+A prefix smaller than the number of blocks is **not an error**: the grid builds only the first N blocks and drops the rest. Build is
+green, the `.resx` visibly contains the missing column, and the bound model property exists, so everything you can grep says the
+column should be there; it just isn't on screen. Worse, the next time the VS Designer saves that form it re-serializes the
+truncated set, so the dropped blocks disappear from the `.resx` for good (looks like "the designer deleted my columns").
+"Columns at the end of the list are missing, the ones before them are fine" is the fingerprint. Before assuming the designer
+reverted the file, compare the prefix with the block count. Every grid in a feature folder can be checked at once (run from a file
+written with the Write tool, not a Bash heredoc, if the pattern gets backslashes, see ../SolvedProblems/build-and-tooling/git-bash-mangles-msbuild-slash-flags.md):
+
+```python
+import re, sys
+s = open(sys.argv[1], encoding='utf-8').read()
+for m in re.finditer(r'<data name="([^"]+)\.ColumnInfo"[^>]*>\s*<value>(\d+),[^C]*Columns:(.*?)</value>', s, re.S):
+    n = len(re.findall(r'(?:^|\t)\d+\{', m.group(3)))
+    if int(m.group(2)) != n: print(sys.argv[1], m.group(1), 'declared', m.group(2), 'defined', n)
+```
+
+Found in CWATIS, 2026-11-11, `WhDocTypesForm`: a grid cloned from a 4-visible-column form kept prefix `4` after columns were added,
+so «Код» (appended last) never showed. The source form `WhWarehousesForm` itself declares 4 but defines 5; only its hidden
+`wh_list_id` column is dropped, which is harmless there because rows are found by model, not by that column.
+
+
+## Multi-row headers: when `Rows.Fixed > 1`, headers live in `Headers`, not in column `Caption`
+
+If `grid.Rows.Fixed > 1` the grid has several header rows. From that point the column `Caption` field must stay **empty** for every column — captions are defined only through the `Headers` property (set in the `.Designer.cs`, edited via the `[…]` editor in the Properties grid).
+
+`Headers` holds one entry per fixed header row; in the Designer each entry is a tab-separated string with one cell per column, in column order (the editor shows it as a table). Cells with equal text in neighbouring positions merge automatically (horizontally within a row, and vertically across rows), which is how group headers are built:
+
+```csharp
+this.grid.Headers = new string[] {
+    "№\tТовар\tУчет\tФакт\tРасхождение\t",       // row 0: group header, repeated text merges
+    "№\tТовар\tУчет\tФакт\tИзлишек\tНедостача"    // row 1: leaf header
+};
+```
+
+**Rules**
+- Single fixed row (`Rows.Fixed == 1`): use column `Caption` as usual. More than one: clear all `Caption` values and use `Headers` only — mixing the two gives duplicated or unmerged header text.
+- **Adding or removing a column means editing every row of `Headers` by hand** — the full checklist (together with the `ColumnInfo` count/index edits) is in "hand-editing a `ColumnInfo` resx string" above. Copy the neighbouring column's cells as a starting point so merging with its group stays intact.
+- Hit-testing and `GetModelRow` treat all fixed rows as non-data rows (`hit.Row >= grid.Rows.Fixed` to skip them).
+
+Source: team convention stated by the project owner, 2026-10-09 (not derived from the library docs; `SmartGridReference.md` describes `Headers` only briefly).
+
+## Gotcha: hiding zero values in a SmartGrid column — use `OwnerDrawCell`, match columns by `Name`
+
+Wanted: numeric read-only columns (stock balances) that show **nothing** instead of `0,00`.
+
+**What did not work (observed in CWATIS `WhInventoryReportsForm.gridLines`, 2026-10-15):** setting `grid.Cols[name].Format = "#,##0.00;-#,##0.00;"`
+(empty third section) in the form constructor — the zeros stayed. The grid there is `DrawMode = OwnerDraw`; the exact reason was not established,
+so don't rely on `Column.Format` for this.
+
+**What to do** - blank the text in `OwnerDrawCell` (the grid must have `DrawMode = DrawModeEnum.OwnerDraw`, and the event is wired in the Designer):
+
+```csharp
+private static readonly string[] HideZeroColumns = { "Actual_Rws_Qty", "Actual_Bk_Bln_Qty" };
+
+private void grid_OwnerDrawCell(object sender, OwnerDrawCellEventArgs e)
+{
+    if (e.Row < grid.Rows.Fixed || e.Row >= grid.Rows.Count) return;      // header / footer rows untouched
+    if (e.Col < 0 || e.Col >= grid.Cols.Count) return;
+    if (Array.IndexOf(HideZeroColumns, grid.Cols[e.Col].Name) < 0) return;
+
+    if (decimal.TryParse(e.Text, NumberStyles.Number, CultureInfo.CurrentCulture, out decimal shown) && shown == 0m)
+        e.Text = string.Empty;
+}
+```
+
+Notes:
+- Check the **display text** (`e.Text`), as the working precedent `ProductsNotSoldRepForm.DetailGrid_OwnerDrawCell` does. An earlier variant here read the raw
+  value through `grid[e.Row, e.Col]`; it was never seen working, but it was also never tested with matching column names (see next point), so
+  it is not proven bad — `e.Text` is simply the form already known to work in this project.
+- The handler matches columns by `Cols[e.Col].Name`. **If a column's `Name` in the resx `ColumnInfo` changes, update the list.** And if the zeros "come back", first
+  re-read the `ColumnInfo` names on disk: the VS designer can silently revert them
+  (`../SolvedProblems/winforms/vs-designer-reverts-external-resx-edits.md`) — that, not the handler, was the cause of the repeated "still zeros" in the case above.
+- Only the shown text changes; the cell value stays `0` (sorting, `GetModelRow`, aggregates are unaffected).
+- Other precedent: `SmartGridExtentionsCW.HideTimeInDateTimeColumn(grid, e)` (blanks `DateTime.MinValue`).
+
+## Gotcha: a `Count` footer ("Всего:") counts only non-empty cells of its column
+
+`AggregateEnum.Count` is documented as "Returns the count of non-empty cells in a range" (local `C1.Win.C1FlexGrid.4.8.xml`, package
+`4.8.20231.596`). A "Всего:" footer placed on a nullable column (an optional owner, a serial number, a comment) therefore
+under-counts the rows silently. The usual precedent (`gridLines`: `Column = 1` = goods name) only works because that column is
+always filled.
+
+**Rule:** anchor the `Count` aggregate on a column that is never empty for a data row — typically the № column. If the № is drawn
+by position in `OwnerDrawCell` (so it stays continuous after `RemoveAt`/sorting), still give the bound `RowNum` property a
+non-zero value: the aggregate reads the cell values, not the drawn text. Precedent: `Features/Warehouse/GoodsDetails/View/WhGoodsDetailsForm`
+(2026-10-15; documentation-based, the under-count itself was not reproduced).
+
+## Gotcha: never let the selection rest on a footer row — a data change then crashes C1 paint ("index" out of range)
+
+**Symptom** (CWATIS invoice form, 2026-10-21): edit a cell (price) in a grid with a footer, then click the footer row directly ->
+«Ошибка приложения»: "Индекс за пределами диапазона ... Имя параметра: index". A plain footer click does nothing; edit + click on a
+data row is fine. Stack (from the `Errors\*.err` log, see `../../micros/CWATIS/.claude/docs/SolvedProblems/cwatis-error-dialog-stack-trace-log.md`):
+`ArrayList.get_Item` <- `C1.Win.C1FlexGrid.RowCollection.get_Item` <- `C1FlexGrid.DrawRow` <- `C1FlexGridBase.OnPaint` — no app frame at all.
+
+**Mechanism (inferred, not instrumented):** clicking the footer while an editor is open commits the edit (`AfterEdit`) and then moves the
+selection onto the footer row. The `AfterEdit` handler then changes bound data (it writes the recalculated amount into a cell), C1
+recalculates the footer aggregates by rebuilding the footer rows, and the next paint draws the still-selected old footer row index,
+which no longer exists. Separately, `GetModelRow<T>(footerRow)` throws the same error on its own: `Rows[footer].DataSource` maps to
+a list index one past the end.
+
+**Fix:** cancel any selection / current-row change that reaches a footer row. Locate the footer **from the data source count**, not
+from the grid's row count:
+
+```csharp
+// first footer row = fixed rows + rows in the bound list (0 before the first binding)
+private static int FirstFooterRow(SmartGrid g)
+    => g.Rows.Fixed + ((g.DataSource as System.Collections.ICollection)?.Count ?? 0);
+private static void KeepOffFooter(SmartGrid g, RangeEventArgs e)
+{
+    int first = FirstFooterRow(g);
+    if (e.NewRange.r1 >= first || e.NewRange.r2 >= first) e.Cancel = true;
+}
+// wire for every grid with footers:
+grid.BeforeSelChange   += (s, e) => KeepOffFooter(grid, e);
+grid.BeforeRowColChange += (s, e) => KeepOffFooter(grid, e);
+```
+
+and treat a footer row as "no selection" wherever the current row is read (`grid.Row >= FirstFooterRow(grid)` -> empty model).
+
+**Trap in the guard itself:** the first version computed `FirstFooterRow` as `Rows.Count - Footers.Descriptions.Count` ("footers are the
+last rows"). That is only true once the grid is fully built. While `DataSource` is being replaced, C1 already moves the current row to
+the first data row **before** it appends the footer rows, so that formula points at a data row, the guard cancels C1's default
+"select the first row after binding", and the grid loads with nothing selected (seen 2026-10-21: the invoice list no longer selected
+its first document on load). Counting the bound list is correct at every moment, including mid-rebind and before any binding.
+Precedent: `Features/Warehouse/Movement/View/SubView/WhMovementControl.cs` (fix built 2026-10-21, not yet re-tested in the app at the
+time of writing). `WhInventoryReportsForm` has the same exposure (footer sums on edited columns, `GetModelSelectedRow` on selection) and
+did not have the guard yet.
+
+## Per-column edit permissions: `Tag` JSON read by `UserPermissionsControl` (already supported)
+
+`UserPermissionsControl` (NuGet 1.1.0.6, source: `userpermissionscontrol` repo, `master` branch,
+`PermissionHandlers/C1FlexGridPermissionHandler.cs`) already handles any `C1FlexGrid`, so `SmartGrid` too. The grid's `Tag`
+holds a JSON list of right objects, each naming the columns it governs (column `Name`, not caption):
+
+```csharp
+_detailGrid.Tag = "{\"Tags\":[{\"Name\":\"PriceEdit\",\"Columns\":[\"Price4Disc\",\"BaseRtlPrice\"]},"
+                + "{\"Name\":\"QntEdit\",\"Columns\":[\"FreeDepQNT\",\"BkBlnQnt\"]}]}";
+```
+
+Per listed column: `Edit` → `Visible = true, AllowEditing = true`; `View`/`Select` → `Visible = true, AllowEditing = false`;
+`None` → `Visible = false`. Precedent: `Forms/PriceList/Views/GoodsTree4PriceListForm` (2026). Verified by reading the source
+and checking the packaged DLL contains `SetupGridColumnPermission` (2026-11-17).
+
+Traps:
+- **`ShowWithPermission()` does not apply it.** That method (`TmplMDIForm`/`TemplateFormMDI`) only calls `CanShowForm()` (the
+  form `Tag`). Grid columns and toolbar `UserData` commands are applied only by `new PermissionManager(this).Initialize()`,
+  which the form must call itself — in `Load`, **after** the grid's columns exist (and once only: it re-queries every right
+  synchronously; calling it from `Activated` hung `GoodsTree4PriceListForm`).
+- **Fails open.** A right object the service returns `null` for is skipped, so its columns stay as the designer left them
+  (unlike toolbar commands, which default to `None`/disabled). Keep the designer default `AllowEditing = false` on guarded
+  columns so a missing right means read-only.
+- **Not enforced afterwards.** It's a one-shot `AllowEditing` write; form code that later sets `column.AllowEditing = true`
+  (view-mode switches), rebuilds columns (`AutoGenerateColumns` + rebind), writes cells in code, or SmartGrid's Ctrl+V
+  `Paste()` path is not checked. Re-check the right in the form's own edit gate (`BeforeEdit`/save) when it matters.
+- **It can un-cancel your `StartEdit`.** Its `StartEdit` handler sets `e.Cancel = false` for Edit-permitted columns and is
+  subscribed after the Designer's handlers, so a business-rule cancel placed in `StartEdit` is overridden. Put such checks in
+  `BeforeEdit` (raised before `StartEdit`; a cancel there stops editing before the permission handler runs).
+- Overwrites `Visible = true` on every listed `Edit`/`View` column, un-hiding columns the designer or a view mode hid.
