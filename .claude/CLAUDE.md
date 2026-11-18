@@ -69,7 +69,7 @@ the project language; facts about the system only (no task notes); link pages wi
 
 | Page | Read when |
 |---|---|
-| [SmartGridConventions.md](Topics/SmartGridConventions.md) | Any SmartGrid work: DataSource, in-place CRUD on `C1DataCollectionBindingList`, «Информация о записи», footers, model unwrap, per-column permissions via `Tag` JSON, many gotchas |
+| [SmartGridConventions.md](Topics/SmartGridConventions.md) | Any SmartGrid work: DataSource, in-place CRUD on `C1DataCollectionBindingList`, «Информация о записи», footers, model unwrap, per-column permissions via `Tag` JSON, many gotchas. Standards for every new grid form: clear designer placeholder rows after `InitializeComponent()` (`Rows.Count = Rows.Fixed + Footers.Descriptions.Count`); a read-only checkbox column draws a box only for `true` |
 | [SmartGridReference.md](Topics/SmartGridReference.md) | SmartGrid component features (RU): multi-row headers, context menu API, tooltips, font zoom, default sort, footer formats, tree mode |
 | [CallServiceUsage.md](Topics/CallServiceUsage.md) | Talking to MySQL from WinForms clients: `CallProcedureDT`/`CallProcedureNonQuery`/`GetTable`/`GetValueFromFunc`/`UniSaver`, binding and null rules, which assembly actually runs |
 | [RecordChangeLog.md](Topics/RecordChangeLog.md) | `log_db` / `add_rec_info` per schema, batch logging, `Main.RecInfoView` menu item, logger limitations |
@@ -104,7 +104,7 @@ the project language; facts about the system only (no task notes); link pages wi
 - [customcombo-endaddcustomitem-resets-selection](SolvedProblems/micros-libraries/customcombo-endaddcustomitem-resets-selection.md) — `CustomCombo.EndAddCustomItem` resets the selection and replaces the whole list.
 - [cwatis-stored-procedures-not-in-repo](SolvedProblems/micros-libraries/cwatis-stored-procedures-not-in-repo.md) — procedures live only in the DB; ask for the exact `schema.procedure_name`, don't guess.
 - [callproceduredt-unknown-params-silently-dropped](SolvedProblems/micros-libraries/callproceduredt-unknown-params-silently-dropped.md) — a dict key the proc doesn't declare is silently ignored; add the `IN` param on the DB too.
-- [unisaver-schema-must-be-physical-not-procedure-namespace](SolvedProblems/micros-libraries/unisaver-schema-must-be-physical-not-procedure-namespace.md) — `global_db.UniSaver` needs the table's real schema (verify per table); wrong one = MySQL syntax error.
+- [unisaver-schema-must-be-physical-not-procedure-namespace](SolvedProblems/micros-libraries/unisaver-schema-must-be-physical-not-procedure-namespace.md) — `global_db.UniSaver` needs the real physical schema **and** table: wrong schema = MySQL syntax error, wrong table or non-column JSON key = silently skipped, still "success". Verify via a working proc, not naming.
 - [deletelines-dbtabexclude-silently-ignored-and-fk-block-is-silent](SolvedProblems/micros-libraries/deletelines-dbtabexclude-silently-ignored-and-fk-block-is-silent.md) — `CallService.DeleteLines` ignores the exclude arg server-side and FK-blocked ids are skipped with no error.
 - [subdivfinances-callservice-and-refers-are-external](SolvedProblems/micros-libraries/subdivfinances-callservice-and-refers-are-external.md) — `CallService.cs` in SubdivFinances is dead code; `Refers.*` come from the `Refers.V2` package, not the empty submodule.
 - [ourorgsform-new-outid-is-oursubid](SolvedProblems/micros-libraries/ourorgsform-new-outid-is-oursubid.md) — `OurOrgsForm_New.OutId` is `m_oursubject.OurSubId`, not the `m_subject` id; convert via `refers.m_oursubject`.
@@ -112,6 +112,8 @@ the project language; facts about the system only (no task notes); link pages wi
 - [globalforms-categorizedsubdivisionsform-not-a-picker](SolvedProblems/micros-libraries/globalforms-categorizedsubdivisionsform-not-a-picker.md) — `CategorizedSubdivisionsForm` picks only with `SelectMode = true`; otherwise use `MSubDivisionsForm { OnlyView = true }`.
 - [globalforms-smartgrid-missing-model-unwrap-helper](SolvedProblems/micros-libraries/globalforms-smartgrid-missing-model-unwrap-helper.md) — reading a bound row's model needs unwrapping `IDataCollectionBindingListItem.Item`; GlobalForms `GetModelRow<T>`.
 - [mc-globalforms-smartgrid-extension-method-collision](SolvedProblems/micros-libraries/mc-globalforms-smartgrid-extension-method-collision.md) — `CS0121` ambiguous `GetModelSelectedRow<T>` after a GlobalForms update; qualify the call with the class.
+- [smartlookupdropdown-programmatic-text-triggers-search](SolvedProblems/micros-libraries/smartlookupdropdown-programmatic-text-triggers-search.md) — setting `SmartLookUpDropDown.Text` from code starts a search and opens the dropdown; `SelectedRowData` isn't the saved record — keep the id yourself, `TextDetached = true`.
+- [treedbgrid-swallowed-background-error-becomes-nre](SolvedProblems/micros-libraries/treedbgrid-swallowed-background-error-becomes-nre.md) — `TreeDBGrid` turns any failed background load (e.g. missing procedure) into a misleading `NullReferenceException` in `DataToNodes`.
 
 ### build-and-tooling
 - [subdivfinances-refersv2-mcglobalforms-version-mismatch](SolvedProblems/build-and-tooling/subdivfinances-refersv2-mcglobalforms-version-mismatch.md) — designer `FileNotFoundException` for MC_GlobalForms: must match the exact version `Refers.V2` was built against (read its nuspec).
@@ -121,11 +123,15 @@ the project language; facts about the system only (no task notes); link pages wi
 - [gitlab-ci-shallow-clone-breaks-commit-based-versioning](SolvedProblems/build-and-tooling/gitlab-ci-shallow-clone-breaks-commit-based-versioning.md) — wrong/decreasing computed versions in CI; set `GIT_DEPTH: 0` and fetch tags.
 - [git-bash-mangles-msbuild-slash-flags](SolvedProblems/build-and-tooling/git-bash-mangles-msbuild-slash-flags.md) — `MSB1008: only one project can be specified`: Git Bash rewrites `/flag` args, use PowerShell. Also the Bash tool collapses doubled backslashes even in quoted heredocs.
 - [github-readme-image-stale-raw-cdn-and-bom-corruption](SolvedProblems/build-and-tooling/github-readme-image-stale-raw-cdn-and-bom-corruption.md) — README image broken after a fix: BOM-corrupted PNG, then a stale raw CDN object; wait and re-probe.
+- [git-bash-sed-in-place-strips-crlf](SolvedProblems/build-and-tooling/git-bash-sed-in-place-strips-crlf.md) — Git Bash `sed -i` rewrites the whole file with LF even with no match (`core.autocrlf` hides it); use Edit or PowerShell.
 
 ### mysql
 - [mysql-in-param-mistaken-for-output](SolvedProblems/mysql/mysql-in-param-mistaken-for-output.md) — `SELECT … INTO _param` on an `IN` param never reaches the caller; make it `INOUT`.
 - [find-in-set-json-array-drops-first-last-element](SolvedProblems/mysql/find-in-set-json-array-drops-first-last-element.md) — `FIND_IN_SET` fed `"[1,2,3]"` misses the first and last id; pass `string.Join(",", ids)`.
 - [pomelo-mysql-ignores-totable-schema](SolvedProblems/mysql/pomelo-mysql-ignores-totable-schema.md) — `Table '<db>.<x>' doesn't exist`: Pomelo ignores the schema in `ToTable`; bridge with a view. Then `Unknown column 'id'` with snake-case naming.
+- [mysql-on-duplicate-key-burns-auto-increment](SolvedProblems/mysql/mysql-on-duplicate-key-burns-auto-increment.md) — get-or-create via `INSERT … ON DUPLICATE KEY` burns an id per call; SELECT first.
+- [mysql-procedure-literal-collation-from-creating-connection](SolvedProblems/mysql/mysql-procedure-literal-collation-from-creating-connection.md) — `Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_0900_ai_ci,IMPLICIT)`: literals/params take the creating session's charset; declare `CHARSET … COLLATE …` on every compared string param.
+- [mysql-tree-nested-counts-upward-cte](SolvedProblems/mysql/mysql-tree-nested-counts-upward-cte.md) — "count including descendants" via `FIND_IN_SET` on a path is quadratic; carry counts up `ParentId` in one recursive CTE (`UNION ALL` + `SUM`).
 
 ### windows-native
 - [tauri-window-center-work-area-vs-monitor-size](SolvedProblems/windows-native/tauri-window-center-work-area-vs-monitor-size.md) — vertical jump on resize: `center()` uses the work area, `monitor.size()` the full screen.
