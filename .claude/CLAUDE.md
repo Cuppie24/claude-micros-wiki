@@ -44,6 +44,8 @@ Find this folder by locating this file — never hardcode its path.
   get replaced by a logging procedure. Every grid of DB entities has the «Информация о записи» menu item.
   Details: [RecordChangeLog.md](Topics/RecordChangeLog.md).
 
+**Every new or changed form** must pass the testers' UI checklist: [FormUiChecklist.md](Topics/FormUiChecklist.md).
+
 ```sql
 DROP PROCEDURE IF EXISTS cwatis.WhInventoryReportLine_Add;
 create definer = bookkeep@`%` procedure cwatis.WhInventoryReportLine_Add(...)
@@ -65,6 +67,7 @@ Version-pin traps with `Refers.V2`: [GlobalFormsPublishing.md](Topics/GlobalForm
 
 | Page | Read when |
 |---|---|
+| [FormUiChecklist.md](Topics/FormUiChecklist.md) | Building, changing or finishing any form: the testers' mandatory UI checklist (МВХ) — standard buttons with tooltips, window title, filter zone, max height 600 px, number/text alignment, Tab order, grid context menu «Информация о записи», «Всего:» footer, zeros blank, sorting, resizable columns |
 | [SmartGridConventions.md](Topics/SmartGridConventions.md) | Any SmartGrid work: DataSource, in-place CRUD on `C1DataCollectionBindingList`, «Информация о записи», footers, model unwrap, per-column permissions via `Tag` JSON, many gotchas. Standards for every new grid form: clear designer placeholder rows after `InitializeComponent()` (`Rows.Count = Rows.Fixed + Footers.Descriptions.Count`); a read-only checkbox column draws a box only for `true` |
 | [SmartGridReference.md](Topics/SmartGridReference.md) | SmartGrid component features (RU): multi-row headers, context menu API, tooltips, font zoom, default sort, footer formats, tree mode |
 | [CallServiceUsage.md](Topics/CallServiceUsage.md) | Talking to MySQL from WinForms clients: `CallProcedureDT`/`CallProcedureNonQuery`/`GetTable`/`GetValueFromFunc`/`UniSaver`, binding and null rules, which assembly actually runs |
