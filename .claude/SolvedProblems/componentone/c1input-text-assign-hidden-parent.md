@@ -32,6 +32,18 @@ this.partnerMSubjField.TextDetached = true;
 partnerMSubjField.Text = partnerModel.MCode;   // no ReadOnly dance
 ```
 
+## Don't apply it to a C1DateEdit filled through `Value` (2026-11-19)
+
+Found in CWATIS (`WhMovementMainControl.dtPlannedDate`, a new date field that starts hidden). `TextDetached = true` was added "to be
+safe" because the field starts hidden. In the running app, picking a date from the calendar did nothing visible ("on click nothing
+happens"), and a date assigned through `Value` did not show either. Removing `TextDetached` fixed it. The neighbouring `dtExecDate`
+had the same setup without the flag and always worked. Verified by testing in the app. Inferred mechanism: with the text detached,
+the displayed text no longer follows `Value`.
+
+Rule: `TextDetached = true` only on C1Input controls whose code assigns `.Text` (text boxes, lookups). A `C1DateEdit` that is set
+and read through `Value` needs no protection, because assigning `Value` is not checked (see Root cause), so keep the default
+`false` there, even when the field is hidden.
+
 ## Checklist
 
 - If you see a `ReadOnly = false / Text = … / ReadOnly = true` sandwich on a C1Input control, it's a latent bug. Replace it with `TextDetached = true`.
