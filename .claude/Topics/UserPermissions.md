@@ -134,8 +134,13 @@ How it walks the form: every control recursively (UserControls included, so comm
 reached from the form's `Initialize()`); a `C1ToolBar` only if it is `Enabled` at that moment (a toolbar inside a
 disabled panel is skipped), plus nested `C1CommandMenu` links. Each right is fetched once per `Initialize()` call.
 
-When the form's own code sets column `AllowEditing` (in `Load` after `Initialize()`, or by document status), the grid `Tag`
-gets overwritten — check the right in code instead and gate the grid there:
+The grid `Tag` only works if **no code writes column `AllowEditing`** after `Initialize()` — e.g. a `Load` loop "only
+these columns are editable" silently re-enables them for a Просмотр user. Put which columns are editable into the designer
+(`ColumnInfo`) instead; toggling grid-level `grid.AllowEditing` by document status is fine (both must allow an edit). List
+only columns that should be editable at Редактирование: the handler sets `AllowEditing = true` on every listed column,
+including ones the designer made read-only. CWATIS warehouse forms do it this way (2026-11-20).
+
+Only if a form really must set column `AllowEditing` at runtime, check the right in code and gate the grid there:
 
 ```csharp
 var permission = new UserPermissionsControl.Services.PermissionService(new Legacy.Services.Interfaces.PermissionSubjects
@@ -146,7 +151,8 @@ var permission = new UserPermissionsControl.Services.PermissionService(new Legac
 bool canEdit = permission != null && permission.Value >= Legacy.Services.Interfaces.PermissionValue.Edit;
 ```
 
-(`Permission` has `Value`, `CanCheck`, `CanApprove`, `IsAdmin`. CWATIS wraps this as `Features/Warehouse/Shared/View/WhRights.cs`.)
+(`Permission` has `Value`, `CanCheck`, `CanApprove`, `IsAdmin`. Unlike the grid `Tag`, this fails closed when the object
+is missing.)
 
 ## Traps
 
