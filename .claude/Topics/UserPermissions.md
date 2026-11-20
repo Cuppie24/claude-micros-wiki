@@ -96,6 +96,7 @@ Checked by `PermissionManager.CanShowForm()` **and** by `Initialize()` (both run
 `Tag` or `GlobalConfig.Enabled = false` → allowed; `IsAdmin` → allowed; level Недоступен, the object missing, or any
 error (bad JSON, DB failure) → denied. Two ways to enforce it:
 - `form.ShowWithPermission()` (`TmplMDIForm` in GlobalForms, `TemplateFormMDI` in Refers): «Доступ запрещен», form not shown.
+  Non-modal only (it calls `Show()`): a form opened with `ShowDialog` (a picker) relies on `Initialize()` below.
   Outside those base classes: `new PermissionManager(form).CanShowForm()` (CWATIS: `Main.CheckPermissionOnForm`).
 - `Initialize()` in `Load`: «У вас нет доступа на просмотр этой формы!» and `BeginInvoke(Close)` — works even when callers
   use plain `Show()` (the rest of `Load` still runs before the close).
