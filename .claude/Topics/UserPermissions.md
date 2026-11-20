@@ -64,6 +64,26 @@ UserPermissionsControl.GlobalConfig.GlobalSubjectId = (int)CallService.GetValueF
 
 How the library decides whether a given name is looked up in the local schema or in `global_db` was not checked.
 
+## Preferred approach — declare in the designer, let the library enforce
+
+Put every right binding in the designer and let `Initialize()` apply it; don't check rights in form code. Code only keeps
+its own business rules (selection, document status) and never fights the library for the same property.
+
+1. **Form** `Tag` = `{"name":"<code>"}` — who may open it.
+2. **Editing commands** `UserData` = `{"name":"<code>"}` (approve: add `"canApprove":true`). View-only and
+   not-implemented commands get no `UserData`.
+3. **Line/grid cells:** which columns are editable at all → designer (`ColumnInfo`, `AllowEditing`); who may edit them →
+   grid `Tag` listing exactly those columns. Code never writes column `AllowEditing`; it may toggle grid-level
+   `grid.AllowEditing` by state (an edit needs both).
+4. **`Load`:** `new PermissionManager(this).Initialize();` once, then re-run the form's own command refresh
+   (`Initialize()` enables every permitted command regardless of the current row).
+
+Why: the library re-locks denied commands on every `EnabledChanged`, so form code can't accidentally re-enable them; the
+bindings are visible in the designer next to the controls; no extra DB queries or helper classes. Reference
+implementation: CWATIS `WhInventoryReportsForm`, `WhMovementForm` / `WhMovementControl` (2026-11-20). A code-side check
+(`PermissionService.GetPermission`, "Fallback" in section 3 below) is the fallback only when column editability really must change
+at runtime.
+
 ## Binding controls
 
 ### 1. The whole form — form `Tag`
@@ -115,6 +135,28 @@ grid.Tag = "{\"Tags\":[{\"Name\":\"PriceEdit\",\"Columns\":[\"Price4Disc\",\"Bas
 Effect per level: see the `right_values` table above. Details and the edit-event traps: [SmartGridConventions.md](SmartGridConventions.md),
 section "Per-column edit permissions".
 
+**Preferred:** the grid `Tag` only works if **no code writes column `AllowEditing`** after `Initialize()` — e.g. a `Load`
+loop "only these columns are editable" silently re-enables them for a Просмотр user. Put which columns are editable into
+the designer (`ColumnInfo`) instead; toggling grid-level `grid.AllowEditing` by document status is fine (both must allow
+an edit). List only columns that should be editable at Редактирование: the handler sets `AllowEditing = true` on every
+listed column, including ones the designer made read-only. A missing right object leaves the columns as the designer set
+them (editable) — acceptable when the form `Tag` names the same object, since then nobody can open the form at all.
+
+**Fallback** — only if a form really must set column `AllowEditing` at runtime: check the right in code and gate the grid
+there:
+
+```csharp
+var permission = new UserPermissionsControl.Services.PermissionService(new Legacy.Services.Interfaces.PermissionSubjects
+{
+    GlobalSubjectId = UserPermissionsControl.GlobalConfig.GlobalSubjectId,
+    LocalSubjectId  = UserPermissionsControl.GlobalConfig.LocalSubjectId
+}).GetPermission("wh_documents");                     // null = object missing; throws on a DB error
+bool canEdit = permission != null && permission.Value >= Legacy.Services.Interfaces.PermissionValue.Edit;
+```
+
+(`Permission` has `Value`, `CanCheck`, `CanApprove`, `IsAdmin`. Unlike the grid `Tag`, this fails closed when the object
+is missing.)
+
 ### 4. Apply it — `Initialize()` in `Load`
 
 ```csharp
@@ -133,26 +175,6 @@ uses `ShowWithPermission()` has **unrestricted** commands (CWATIS `ContractTypes
 How it walks the form: every control recursively (UserControls included, so commands in a UserControl's toolbar are
 reached from the form's `Initialize()`); a `C1ToolBar` only if it is `Enabled` at that moment (a toolbar inside a
 disabled panel is skipped), plus nested `C1CommandMenu` links. Each right is fetched once per `Initialize()` call.
-
-The grid `Tag` only works if **no code writes column `AllowEditing`** after `Initialize()` — e.g. a `Load` loop "only
-these columns are editable" silently re-enables them for a Просмотр user. Put which columns are editable into the designer
-(`ColumnInfo`) instead; toggling grid-level `grid.AllowEditing` by document status is fine (both must allow an edit). List
-only columns that should be editable at Редактирование: the handler sets `AllowEditing = true` on every listed column,
-including ones the designer made read-only. CWATIS warehouse forms do it this way (2026-11-20).
-
-Only if a form really must set column `AllowEditing` at runtime, check the right in code and gate the grid there:
-
-```csharp
-var permission = new UserPermissionsControl.Services.PermissionService(new Legacy.Services.Interfaces.PermissionSubjects
-{
-    GlobalSubjectId = UserPermissionsControl.GlobalConfig.GlobalSubjectId,
-    LocalSubjectId  = UserPermissionsControl.GlobalConfig.LocalSubjectId
-}).GetPermission("wh_documents");                     // null = object missing; throws on a DB error
-bool canEdit = permission != null && permission.Value >= Legacy.Services.Interfaces.PermissionValue.Edit;
-```
-
-(`Permission` has `Value`, `CanCheck`, `CanApprove`, `IsAdmin`. Unlike the grid `Tag`, this fails closed when the object
-is missing.)
 
 ## Traps
 
