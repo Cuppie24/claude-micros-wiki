@@ -841,6 +841,8 @@ did not have the guard yet.
 
 ## Per-column edit permissions: `Tag` JSON read by `UserPermissionsControl` (already supported)
 
+Whole picture (form `Tag`, command `UserData`, tables, startup): [UserPermissions.md](UserPermissions.md).
+
 `UserPermissionsControl` (NuGet 1.1.0.6, source: `userpermissionscontrol` repo, `master` branch,
 `PermissionHandlers/C1FlexGridPermissionHandler.cs`) already handles any `C1FlexGrid`, so `SmartGrid` too. The grid's `Tag`
 holds a JSON list of right objects, each naming the columns it governs (column `Name`, not caption):
