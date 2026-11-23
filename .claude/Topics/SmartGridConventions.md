@@ -747,6 +747,11 @@ this.grid.Headers = new string[] {
 
 **Rules**
 - Single fixed row (`Rows.Fixed == 1`): use column `Caption` as usual. More than one: clear all `Caption` values and use `Headers` only — mixing the two gives duplicated or unmerged header text.
+  - Why: at runtime the column `Caption` **overwrites header row 0**, whatever `Headers` says. Symptom (CWATIS warehouse
+    directories, 2026-11-23): `Headers` row 0 was `…\tУтвердил\tУтвердил` with Кто / Когда below, but the running grid showed
+    two unmerged cells «Утвердил» | «Утвержден» — the second column's leftover `Caption:"Утвержден"`. Either empty `Caption`, or
+    `Caption` equal to the column's row-0 text (as `WhInventoryReportsForm.gridReports` does: both «Акт» columns have
+    `Caption:"Акт"`). When a group header won't merge, compare every `Caption` in the `.resx` `ColumnInfo` with row 0 first.
 - **Adding or removing a column means editing every row of `Headers` by hand** — the full checklist (together with the `ColumnInfo` count/index edits) is in "hand-editing a `ColumnInfo` resx string" above. Copy the neighbouring column's cells as a starting point so merging with its group stays intact.
 - Hit-testing and `GetModelRow` treat all fixed rows as non-data rows (`hit.Row >= grid.Rows.Fixed` to skip them).
 
