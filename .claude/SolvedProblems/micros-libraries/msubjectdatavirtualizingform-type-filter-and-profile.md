@@ -66,6 +66,9 @@ query starts, so the running query uses the old filter. On open, `Load`:
 3. `await OnRefresh()` at the end of `Load` -> **dropped** too.
 The grid gets the «Все» result while the combo shows ЮЛ. Any filter change made during a running refresh is lost the same way.
 
-**Fix (library, not done yet):** in `OnRefresh`, when `IsRefresh` is set, remember a pending request and re-run once in
-`finally` (or cancel the running query and restart — the `cts` is already there). Consumers can't work around it cleanly:
-the refresh command and `OnRefresh` are private.
+**Fix (GlobalForms commit `fe43bf4` on `development`, 2026-11-24; ships in the first version after 1.1.8.4):** a new
+`OnRefresh` cancels the running one and starts over. `GetNonVirtualized` checks the token only before the DB call
+(`CallService` takes none), so the superseded call still gets rows: it compares its own `CancellationTokenSource` with the
+field `cts` after the `await` and discards the result; only the latest call resets `IsRefresh`, the loader and runs
+`AfterDataRefresh`. The `if (IsRefresh) return;` guards on the type combo, «Обновить» and `isCustom` were removed. Consumers
+on an older MC_GlobalForms still have the bug and can't work around it cleanly (`OnRefresh` and the command are private).
