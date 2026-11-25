@@ -595,6 +595,35 @@ keep the footer, let `AfterEdit` only save, then re-read the data and assign a *
 writing this was built and compiled but **not yet exercised in the app** — confirm by editing that form's last row before citing it
 as proof, and update this note with the result either way.
 
+### Update 2026-11-25: an inline edit on a `C1DataCollectionBindingList` grid *is* an in-place list change, done by C1 itself
+
+Runtime facts (user-tested in CWATIS): `ContractTypesForm.masterGrid` still crashes on editing its last row even though its `AfterEdit`
+only saves (`OnUpdateSilent`, no reload, no `RemoveAt`/`Insert`/`Add`, no rebind). `ContractsSubTypeForm._detailGrid` — identical
+footer (`Count` on column 1, `Footers.Fixed`, `OwnerDraw`) but bound to a plain `System.ComponentModel.BindingList<T>` — does **not**
+crash when «Изменить» replaces its last row (`BindingList[i] = dto` → one `ItemChanged`).
+
+Why the first one still changes the list (decompiled `C1.DataCollection.BindingList` 1.0.20223.121 with `ilspycmd`):
+- The grid writes a cell through `PropertyDescriptorWrapper.SetValue`, which sets `DataCollectionBindingListItem.HasChanges = true`.
+- On commit, `DataCollectionBindingListItem.IEditableObject.EndEdit()` calls `C1DataCollectionBindingList.OnItemEndEdit(item)` when
+  `HasChanges` → `ReplaceAsync(item, index)` → `C1EditableDataCollection.ReplaceAsync` + `CommitChangesAsync`. That raises
+  `CollectionChanged(Replace)` → `ListChanged(ItemChanged, index)`; when the task does not finish synchronously (`OnItemEndEdit` is
+  `async void`) a `ListChanged(Reset)` follows later. `CommitChangesAsync` also raises `Reset` if the commit changes indexes.
+- `HasChanges` is reset only by `CancelEdit`, never by `EndEdit` — so after a row's first edit, **every later `EndEdit` on that row**
+  (e.g. the currency manager leaving it) replaces it again.
+- `RemoveAt` / `Insert` on `C1DataCollectionBindingList` are `async void` too: same pattern, plus a deferred `Reset` if not synchronous.
+
+Consequences:
+- Every crash seen so far (`SubdivisionsForm`, `ContractTypesForm`, CWATIS invoices `gridDocs`) was on a grid bound to
+  `C1DataCollectionBindingList`; the one plain-`BindingList<T>` last-row replace tested did not crash. Suspect the
+  `C1DataCollectionBindingList` notification path, not "our code patches the row". Inferred, not proven: the C1FlexGrid-side
+  mechanism is still unknown.
+- The 2026-11-10 "full rebind instead of editing the bound list" pattern **cannot** protect inline edits: C1 replaces the row on
+  commit, before `AfterEdit`'s save/rebind runs. Expect `WhWarehousesForm` / `WhDocTypesForm` (inline edit + footer +
+  `C1DataCollectionBindingList`) to crash on a last-row edit until tested otherwise; same for CWATIS' `WhGridLastRow` guard, which only
+  covers the view's own replace calls.
+- Finding the triggers of a footer/last-row crash: grep for `C1DataCollectionBindingList` grids with `Footers.Descriptions.Add` and
+  either inline editing (`AfterEdit`) or list mutation — "the form never touches the list" does not rule a grid out.
+
 ### Checkbox / Boolean columns (`Style:"DataType:System.Boolean;..."`)
 
 A column styled with `DataType:System.Boolean` renders a checkbox glyph and toggles on click, going through the exact same `StartEdit`/`AfterEdit` lifecycle as a text column — no special handling needed beyond the guard + persist pattern above (and the `GetModelRow<T>` gotcha, which applies here just as much as to any other column). `AllowEditing` at the column level (default `true` unless set otherwise) controls whether the checkbox responds to clicks at all; there's no need to set it to `False` and drive the checkbox by hand via `MouseDown`/`HitTest` — that was tried as a workaround while the real bug (the `DataSource`-casting gotcha above) was still unidentified, and turned out to be unnecessary once the actual defect was fixed.
