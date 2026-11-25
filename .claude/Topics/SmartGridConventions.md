@@ -603,7 +603,10 @@ footer (`Count` on column 1, `Footers.Fixed`, `OwnerDraw`) but bound to a plain 
 crash when «Изменить» replaces its last row (`BindingList[i] = dto` → one `ItemChanged`).
 
 Why the first one still changes the list (decompiled `C1.DataCollection.BindingList` 1.0.20223.121 with `ilspycmd`):
-- The grid writes a cell through `PropertyDescriptorWrapper.SetValue`, which sets `DataCollectionBindingListItem.HasChanges = true`.
+- C1FlexGrid's bound set-value (decompiled `C1.Win.C1FlexGrid.4.8` 4.8.20231.596, internal class `bg`) takes the row item
+  `CurrencyManager.List[i]` (the `DataCollectionBindingListItem` wrapper), calls `BeginEdit`, `propertyDescriptor.SetValue`, and then
+  `EndEdit()` **immediately** unless `EditOptions` has `DelayedCommit` (then on leaving the row). Unchanged values return early.
+- That `SetValue` is C1's `PropertyDescriptorWrapper.SetValue`, which sets `DataCollectionBindingListItem.HasChanges = true`.
 - On commit, `DataCollectionBindingListItem.IEditableObject.EndEdit()` calls `C1DataCollectionBindingList.OnItemEndEdit(item)` when
   `HasChanges` → `ReplaceAsync(item, index)` → `C1EditableDataCollection.ReplaceAsync` + `CommitChangesAsync`. That raises
   `CollectionChanged(Replace)` → `ListChanged(ItemChanged, index)`; when the task does not finish synchronously (`OnItemEndEdit` is
